@@ -1,6 +1,17 @@
 import dotenv from "dotenv";
-import { AppError, err, ok, safeAsync, safeSync, type Result } from "@keyless-sentry/core";
+import {
+  AppError,
+  SignatureRequestService,
+  SentryRegistryClient,
+  err,
+  ok,
+  parseWithSchema,
+  safeAsync,
+  safeSync,
+  type Result,
+} from "@keyless-sentry/core";
 import { SentryOrchestrator } from "@keyless-sentry/core";
+import { z } from "zod";
 import { handleTelegramMessage } from "./router";
 
 async function readLines(): Promise<Result<AsyncIterable<string>>> {
@@ -63,6 +74,20 @@ async function readLines(): Promise<Result<AsyncIterable<string>>> {
   });
 }
 
+async function coerceInput(line: string): Promise<unknown> {
+  // Accept either raw command text (legacy) or a JSON intent line:
+  // {"text": "...", "user": {"platform":"telegram","id":"123"}}
+  const trimmed = line.trim();
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      return JSON.parse(trimmed) as unknown;
+    } catch {
+      return { text: line };
+    }
+  }
+  return { text: line };
+}
+
 async function main(): Promise<Result<void>> {
   return safeAsync("gateway.index.main", async () => {
     const dotenvRes = safeSync("gateway.dotenv.config", () => {
@@ -74,13 +99,48 @@ async function main(): Promise<Result<void>> {
     const orchRes = await SentryOrchestrator.createFromEnv();
     if (!orchRes.ok) return orchRes;
 
+    const registryRes = SentryRegistryClient.fromProcessEnv();
+    if (!registryRes.ok) return registryRes;
+    const registry = registryRes.value;
+
+    const WcEnvSchema = z
+      .object({
+        WALLETCONNECT_PROJECT_ID: z.string().min(1),
+      })
+      .strict();
+    const wcEnvRes = parseWithSchema(WcEnvSchema, process.env, "gateway.env.walletconnect");
+    if (!wcEnvRes.ok) return wcEnvRes;
+
+    const signatureRequests = new SignatureRequestService({
+      init: {
+        projectId: wcEnvRes.value.WALLETCONNECT_PROJECT_ID,
+        metadata: {
+          name: "Keyless Sentry",
+          description: "Public Financial Orchestrator (headless)",
+          url: "https://keyless-collective.example/sentry",
+          icons: ["https://keyless-collective.example/icon.png"],
+        },
+      },
+      notifier: async ({ requestId, message }) =>
+        safeAsync("gateway.signatureRequests.notifier", async () => {
+          console.log(`[signature-request:${requestId}] ${message}`);
+          return ok(undefined);
+        }),
+      clientProvider: async () =>
+        safeAsync("gateway.signatureRequests.clientProvider", async () => {
+          return orchRes.value.getKeylessClient();
+        }),
+    });
+
     const linesRes = await readLines();
     if (!linesRes.ok) return linesRes;
 
-    const ctx = { orchestrator: orchRes.value } as const;
+    const ctx = { orchestrator: orchRes.value, signatureRequests } as const;
+    const fullCtx = { ...ctx, registry } as const;
 
     for await (const line of linesRes.value) {
-      const handled = await handleTelegramMessage(ctx, { text: line });
+      const input = await coerceInput(line);
+      const handled = await handleTelegramMessage(fullCtx, input);
       if (handled.ok) {
         // headless: write to stdout, upstream can adapt to Openclaw transport
         console.log(handled.value);

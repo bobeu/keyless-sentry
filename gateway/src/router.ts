@@ -14,6 +14,14 @@ import { buildCommandMap } from "./commands";
 const TelegramTextSchema = z
   .object({
     text: z.string().min(1),
+    // optional sender identity (for on-chain registry lookups)
+    user: z
+      .object({
+        platform: z.enum(["telegram", "whatsapp"]),
+        id: z.string().min(1).max(128),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -48,6 +56,83 @@ function parseTelegramCommand(text: string): Result<ParsedCommand> {
 
 function argsToInput(command: string, rawArgs: string): Result<unknown> {
   return safeSync("gateway.router.argsToInput", () => {
+    if (command === "/start") {
+      // format: /start <platform> <id> <personality>
+      const parts = rawArgs.split(/\s+/).filter((p) => p.length > 0);
+      if (parts.length !== 3) {
+        return err(
+          new AppError({
+            code: "INVALID_INPUT",
+            message: "Usage: /start <telegram|whatsapp> <userId> <GUARDIAN|ACCOUNTANT|STRATEGIST>",
+            context: "gateway.router.argsToInput:/start",
+            details: { rawArgs },
+          }),
+        );
+      }
+      return ok({ platform: parts[0], id: parts[1], personality: parts[2] });
+    }
+    if (command === "/authorize-agent") {
+      // format: /authorize-agent <agentId> <limit> <durationSec>
+      const parts = rawArgs.split(/\s+/).filter((p) => p.length > 0);
+      if (parts.length !== 3) {
+        return err(
+          new AppError({
+            code: "INVALID_INPUT",
+            message: "Usage: /authorize-agent <agentId> <limit> <durationSec>",
+            context: "gateway.router.argsToInput:/authorize-agent",
+            details: { rawArgs },
+          }),
+        );
+      }
+      return ok({ agentId: parts[0], limit: parts[1], durationSec: parts[2] });
+    }
+    if (command === "/get-invoice") {
+      // format: /get-invoice <payTo> <memo...?>
+      const parts = rawArgs.split(/\s+/).filter((p) => p.length > 0);
+      if (parts.length < 1) {
+        return err(
+          new AppError({
+            code: "INVALID_INPUT",
+            message: "Usage: /get-invoice <payTo> [memo]",
+            context: "gateway.router.argsToInput:/get-invoice",
+            details: { rawArgs },
+          }),
+        );
+      }
+      const payTo = parts[0];
+      const memo = parts.slice(1).join(" ").trim();
+      return ok({ payTo, memo: memo.length > 0 ? memo : undefined });
+    }
+    if (command === "/reserve-task") {
+      // format: /reserve-task <taskId> <token> <amount>
+      const parts = rawArgs.split(/\s+/).filter((p) => p.length > 0);
+      if (parts.length !== 3) {
+        return err(
+          new AppError({
+            code: "INVALID_INPUT",
+            message: "Usage: /reserve-task <taskId> <token> <amount>",
+            context: "gateway.router.argsToInput:/reserve-task",
+            details: { rawArgs },
+          }),
+        );
+      }
+      return ok({ taskId: parts[0], token: parts[1], amount: parts[2] });
+    }
+    if (command === "/complete-task") {
+      // format: /complete-task <taskId>
+      const parts = rawArgs.split(/\s+/).filter((p) => p.length > 0);
+      if (parts.length !== 1) {
+        return err(
+          new AppError({
+            code: "INVALID_INPUT",
+            message: "Usage: /complete-task <taskId>",
+            context: "gateway.router.argsToInput:/complete-task",
+            details: { rawArgs },
+          }),
+        );
+      }
+      return ok({ taskId: parts[0] });
+    }
     if (command === "/create-wallet") {
       const salt = rawArgs.length > 0 ? rawArgs : undefined;
       return ok({ salt });
@@ -99,7 +184,10 @@ export async function handleTelegramMessage(
     );
     if (!validated.ok) return validated;
 
-    const execRes = await cmd.execute(ctx, validated.value);
+    const execRes = await cmd.execute(
+      Object.freeze({ ...ctx, sender: inputRes.value.user }) as CommandContext,
+      validated.value,
+    );
     if (!execRes.ok) return execRes;
 
     const formatted = formatOutput(cmd.name, execRes.value);

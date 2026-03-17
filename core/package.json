@@ -9,9 +9,11 @@
   },
   "dependencies": {
     "@keyless-collective/sdk": "^0.0.2",
+    "@walletconnect/sign-client": "^2.23.8",
+    "@walletconnect/types": "^2.23.8",
+    "@walletconnect/utils": "^2.23.8",
     "dotenv": "^17.3.1",
     "viem": "^2.47.4",
     "zod": "^4.3.6"
   }
 }
-

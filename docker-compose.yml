@@ -1,0 +1,41 @@
+services:
+  sentry-agent:
+    build: .
+    environment:
+      - KEYLESS_BASE_URL=${KEYLESS_BASE_URL}
+      - KEYLESS_CHAIN_ID=${KEYLESS_CHAIN_ID}
+      - KEYLESS_OWNER=${KEYLESS_OWNER}
+      - WALLETCONNECT_PROJECT_ID=${WALLETCONNECT_PROJECT_ID}
+      - SENTRY_REGISTRY_ADDRESS=${SENTRY_REGISTRY_ADDRESS}
+      - SENTRY_RPC_URL=${SENTRY_RPC_URL}
+      - SENTRY_CHAIN_ID=${SENTRY_CHAIN_ID}
+      - AUTH=${AUTH}
+      - SENTRY_ID=${SENTRY_ID}
+    ports:
+      - "18789:18789"
+    volumes:
+      - openclaw_storage:/root/.openclaw/storage
+
+  sentry-gateway:
+    build: .
+    command: ["bun", "--cwd", "gateway", "run", "start"]
+    depends_on:
+      - sentry-agent
+    environment:
+      - KEYLESS_BASE_URL=${KEYLESS_BASE_URL}
+      - KEYLESS_CHAIN_ID=${KEYLESS_CHAIN_ID}
+      - KEYLESS_OWNER=${KEYLESS_OWNER}
+      - WALLETCONNECT_PROJECT_ID=${WALLETCONNECT_PROJECT_ID}
+      - SENTRY_REGISTRY_ADDRESS=${SENTRY_REGISTRY_ADDRESS}
+      - SENTRY_RPC_URL=${SENTRY_RPC_URL}
+      - SENTRY_CHAIN_ID=${SENTRY_CHAIN_ID}
+      - AUTH=${AUTH}
+      - SENTRY_ID=${SENTRY_ID}
+    ports:
+      - "18790:18789"
+    volumes:
+      - openclaw_storage:/root/.openclaw/storage
+
+volumes:
+  openclaw_storage:
+

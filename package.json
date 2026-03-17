@@ -4,7 +4,8 @@
   "private": true,
   "workspaces": [
     "core",
-    "gateway"
+    "gateway",
+    "contracts"
   ],
   "scripts": {
     "typecheck": "tsc -b",

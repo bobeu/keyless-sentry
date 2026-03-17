@@ -22,6 +22,13 @@ export type CreateWalletReturn = Readonly<{
   authResponse: AuthResponse;
 }>;
 
+export type TransactionStatus = Readonly<{
+  hash: Hex;
+  status: "pending" | "confirmed" | "failed";
+  blockNumber?: string;
+  confirmations?: number;
+}>;
+
 export type HealthCheckResponse = Readonly<{
   status: string;
   timestamp: number;
@@ -38,6 +45,7 @@ export type HealthCheckResponse = Readonly<{
 export type KeylessClientLike = Readonly<{
   healthCheck: () => Promise<HealthCheckResponse>;
   getSupportedChainIds: () => number[];
+  getTransactionStatus: (txHash: Hex) => Promise<TransactionStatus>;
   createWallet: (
     walletClient: unknown,
     walletRequest: CreateWalletRequest,

@@ -49,6 +49,7 @@ export async function createKeylessClient(configUnknown: unknown): Promise<Resul
       if (
         typeof client.healthCheck !== "function" ||
         typeof client.getSupportedChainIds !== "function" ||
+        typeof client.getTransactionStatus !== "function" ||
         typeof client.createWallet !== "function"
       ) {
         return err(
@@ -59,6 +60,7 @@ export async function createKeylessClient(configUnknown: unknown): Promise<Resul
             details: {
               hasHealthCheck: typeof client.healthCheck,
               hasGetSupportedChainIds: typeof client.getSupportedChainIds,
+              hasGetTransactionStatus: typeof client.getTransactionStatus,
               hasCreateWallet: typeof client.createWallet,
             },
           }),

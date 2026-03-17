@@ -1,17 +1,9 @@
 import type { HealthCheckResponse, KeylessClientLike } from "./keylessSdkTypes";
 import { createKeylessClient } from "./keylessSdkRuntime";
-import {
-  createWalletClient,
-  http,
-  isAddress,
-  isHex,
-  type Address,
-  type Hex,
-} from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { isAddress, type Address } from "viem";
 import dotenv from "dotenv";
 import { z } from "zod";
-import { AppError, toAppError } from "./errors";
+import { toAppError } from "./errors";
 import { err, ok, type Result } from "./result";
 import { parseWithSchema, safeAsync, safeSync } from "./validation";
 
@@ -23,13 +15,6 @@ const EnvSchema = z
       .string()
       .refine((v) => isAddress(v), { message: "KEYLESS_OWNER must be an address" })
       .transform((v) => v as Address),
-    KEYLESS_RPC_URL: z.string().url(),
-    KEYLESS_OWNER_PRIVATE_KEY: z
-      .string()
-      .refine((v) => isHex(v) && v.length === 66, {
-        message: "KEYLESS_OWNER_PRIVATE_KEY must be a 32-byte 0x-prefixed hex",
-      })
-      .transform((v) => v as Hex),
   })
   .strict();
 
@@ -74,32 +59,6 @@ export class SentryOrchestrator {
 
   getEnv(): Result<SentryEnv> {
     return safeSync("core.SentryOrchestrator.getEnv", () => ok(this.env));
-  }
-
-  createOwnerWalletClient(): Result<ReturnType<typeof createWalletClient>> {
-    return safeSync("core.SentryOrchestrator.createOwnerWalletClient", () => {
-      const account = privateKeyToAccount(this.env.KEYLESS_OWNER_PRIVATE_KEY);
-      if (account.address !== this.env.KEYLESS_OWNER) {
-        return err(
-          new AppError({
-            code: "CONFIG_ERROR",
-            message: "Owner address does not match private key",
-            context: "core.owner.mismatch",
-            details: {
-              envOwner: this.env.KEYLESS_OWNER,
-              derivedOwner: account.address,
-            },
-          }),
-        );
-      }
-
-      const walletClient = createWalletClient({
-        account,
-        transport: http(this.env.KEYLESS_RPC_URL),
-      });
-
-      return ok(walletClient);
-    });
   }
 
   async healthCheck(): Promise<Result<HealthCheckResponse>> {

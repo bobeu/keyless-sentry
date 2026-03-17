@@ -3,6 +3,9 @@ import type { Result } from "@keyless-sentry/core";
 
 export type CommandContext = Readonly<{
   orchestrator: import("@keyless-sentry/core").SentryOrchestrator;
+  signatureRequests: import("@keyless-sentry/core").SignatureRequestService;
+  registry: import("@keyless-sentry/core").SentryRegistryClient;
+  sender?: import("@keyless-sentry/core").ExternalUserIdText;
 }>;
 
 export type Command<TInput, TOutput> = Readonly<{
