@@ -1,0 +1,17 @@
+{
+  "name": "@keyless-sentry/gateway",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@keyless-sentry/core": "workspace:*",
+    "dotenv": "^17.3.1",
+    "zod": "^4.3.6"
+  }
+}
+

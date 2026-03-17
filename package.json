@@ -1,0 +1,18 @@
+{
+  "name": "keyless-sentry",
+  "type": "module",
+  "private": true,
+  "workspaces": [
+    "core",
+    "gateway"
+  ],
+  "scripts": {
+    "typecheck": "tsc -b",
+    "build": "bun run typecheck",
+    "start": "bun --cwd gateway run start"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.2"
+  }
+}

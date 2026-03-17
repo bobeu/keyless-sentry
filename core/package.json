@@ -1,0 +1,17 @@
+{
+  "name": "@keyless-sentry/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@keyless-collective/sdk": "^0.0.2",
+    "dotenv": "^17.3.1",
+    "viem": "^2.47.4",
+    "zod": "^4.3.6"
+  }
+}
+
