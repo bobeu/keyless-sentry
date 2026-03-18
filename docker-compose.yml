@@ -1,6 +1,26 @@
 services:
+  postgres:
+    image: postgres:alpine
+    environment:
+      POSTGRES_USER: sentry
+      POSTGRES_PASSWORD: sentry_password
+      POSTGRES_DB: sentry
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    mem_limit: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentry -d sentry"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   sentry-agent:
     build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       - KEYLESS_BASE_URL=${KEYLESS_BASE_URL}
       - KEYLESS_CHAIN_ID=${KEYLESS_CHAIN_ID}
@@ -11,15 +31,19 @@ services:
       - SENTRY_CHAIN_ID=${SENTRY_CHAIN_ID}
       - AUTH=${AUTH}
       - SENTRY_ID=${SENTRY_ID}
+      - DATABASE_URL=postgresql://sentry:sentry_password@postgres:5432/sentry?schema=public
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
     ports:
       - "18789:18789"
     volumes:
       - openclaw_storage:/root/.openclaw/storage
+    mem_limit: 512mb
 
   sentry-gateway:
     build: .
     command: ["bun", "--cwd", "gateway", "run", "start"]
     depends_on:
+      - postgres
       - sentry-agent
     environment:
       - KEYLESS_BASE_URL=${KEYLESS_BASE_URL}
@@ -31,11 +55,14 @@ services:
       - SENTRY_CHAIN_ID=${SENTRY_CHAIN_ID}
       - AUTH=${AUTH}
       - SENTRY_ID=${SENTRY_ID}
+      - DATABASE_URL=postgresql://sentry:sentry_password@postgres:5432/sentry?schema=public
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
     ports:
       - "18790:18789"
     volumes:
       - openclaw_storage:/root/.openclaw/storage
+    mem_limit: 512mb
 
 volumes:
   openclaw_storage:
-
+  postgres_data:

@@ -7,6 +7,7 @@ import {
   safeAsync,
   safeSync,
   type Result,
+  JsonRpcHandler,
 } from "@keyless-sentry/core";
 import type { CommandContext } from "./command";
 import { buildCommandMap } from "./commands";
@@ -57,17 +58,27 @@ function parseTelegramCommand(text: string): Result<ParsedCommand> {
 function argsToInput(command: string, rawArgs: string): Result<unknown> {
   return safeSync("gateway.router.argsToInput", () => {
     if (command === "/start") {
-      // format: /start <platform> <id> <personality>
+      // Handle two cases:
+      // 1. Interactive component callback: "GUARDIAN telegram 123456" (personality, platform, id)
+      // 2. Legacy format: "/start <platform> <id> <personality>"
       const parts = rawArgs.split(/\s+/).filter((p) => p.length > 0);
+      
+      // Check if it's a button callback (starts with personality)
+      if (parts.length === 3) {
+        const firstPart = parts[0];
+        if (firstPart && ["GUARDIAN", "ACCOUNTANT", "STRATEGIST"].includes(firstPart)) {
+          return ok({ 
+            personality: firstPart, 
+            platform: parts[1], 
+            id: parts[2] 
+          });
+        }
+      }
+      
+      // Legacy format
       if (parts.length !== 3) {
-        return err(
-          new AppError({
-            code: "INVALID_INPUT",
-            message: "Usage: /start <telegram|whatsapp> <userId> <GUARDIAN|ACCOUNTANT|STRATEGIST>",
-            context: "gateway.router.argsToInput:/start",
-            details: { rawArgs },
-          }),
-        );
+        // Return empty to indicate we need interactive components
+        return ok({ needsComponents: true });
       }
       return ok({ platform: parts[0], id: parts[1], personality: parts[2] });
     }
@@ -146,6 +157,23 @@ function formatOutput(command: string, output: unknown): Result<string> {
     if (command === "/help") {
       return ok(String(output));
     }
+    // Handle special output types
+    if (command === "/start" && typeof output === "object" && output !== null) {
+      const outputObj = output as Record<string, unknown>;
+      
+      // If it's a needsComponents request, return interactive buttons
+      if ("needsComponents" in outputObj && outputObj.needsComponents === true) {
+        const components = {
+          components: [
+            { type: "button" as const, label: "🛡️ Guardian", action: "/start GUARDIAN" },
+            { type: "button" as const, label: "📊 Accountant", action: "/start ACCOUNTANT" },
+            { type: "button" as const, label: "🚀 Strategist", action: "/start STRATEGIST" },
+          ],
+          message: "Welcome to Sentry! Choose your sentinel personality:"
+        };
+        return ok(JSON.stringify(components));
+      }
+    }
     return ok(JSON.stringify(output, null, 2));
   });
 }
@@ -155,6 +183,14 @@ export async function handleTelegramMessage(
   inputUnknown: unknown,
 ): Promise<Result<string>> {
   return safeAsync("gateway.router.handleTelegramMessage", async () => {
+    // Check if this is a JSON-RPC request (A2A communication)
+    if (isJsonRpcRequest(inputUnknown)) {
+      const handler = new JsonRpcHandler();
+      const response = await handler.handleRequest(inputUnknown);
+      return ok(JSON.stringify(response));
+    }
+
+    // Otherwise, handle as a Telegram text command
     const inputRes = parseWithSchema(TelegramTextSchema, inputUnknown, "gateway.router.input");
     if (!inputRes.ok) return inputRes;
 
@@ -194,5 +230,14 @@ export async function handleTelegramMessage(
     if (!formatted.ok) return formatted;
     return ok(formatted.value);
   });
+}
+
+/**
+ * Check if input is a JSON-RPC 2.0 request
+ */
+function isJsonRpcRequest(input: unknown): boolean {
+  if (typeof input !== "object" || input === null) return false;
+  const obj = input as Record<string, unknown>;
+  return obj.jsonrpc === "2.0" && typeof obj.method === "string";
 }
 

@@ -10,7 +10,9 @@
   "scripts": {
     "typecheck": "tsc -b",
     "build": "bun run typecheck",
-    "start": "bun --cwd gateway run start"
+    "start": "bun --cwd gateway run start",
+    "test:a2a": "bun run scripts/test_a2a_request.ts",
+    "prod:local": "docker-compose up -d && echo 'Sentry is Live. Close VS Code to save RAM and Bandwidth.'"
   },
   "devDependencies": {
     "@types/bun": "latest",

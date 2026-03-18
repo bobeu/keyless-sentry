@@ -3,6 +3,7 @@ import {
   AppError,
   SignatureRequestService,
   SentryRegistryClient,
+  createTransactionWatcher,
   err,
   ok,
   parseWithSchema,
@@ -132,10 +133,34 @@ async function main(): Promise<Result<void>> {
         }),
     });
 
+    // Initialize transaction watcher for monitoring tx confirmations
+    const txWatcherRes = createTransactionWatcher({
+      notifier: async ({ txHash, userHashedId, status, gasUsed, error }) => {
+        // Notify via stdout when transaction status changes
+        const notification = {
+          type: "transaction-status",
+          txHash,
+          userHashedId,
+          status,
+          gasUsed,
+          error,
+          timestamp: new Date().toISOString(),
+        };
+        console.log(JSON.stringify(notification));
+        return ok(undefined);
+      },
+    });
+
+    if (!txWatcherRes.ok) {
+      console.error("[gateway] Warning: Transaction watcher not initialized:", txWatcherRes.error.message);
+    }
+
+    const txWatcher = txWatcherRes.ok ? txWatcherRes.value : undefined;
+
     const linesRes = await readLines();
     if (!linesRes.ok) return linesRes;
 
-    const ctx = { orchestrator: orchRes.value, signatureRequests } as const;
+    const ctx = { orchestrator: orchRes.value, signatureRequests, txWatcher } as const;
     const fullCtx = { ...ctx, registry } as const;
 
     for await (const line of linesRes.value) {

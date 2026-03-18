@@ -32,7 +32,7 @@ contract SentryRegistry {
         bool active;
     }
     mapping(bytes32 => mapping(bytes32 => Reservation)) private reservations; // userIdHash => taskIdHash => reservation
-    mapping(bytes32 => mapping(bytes32 => bytes)) private agentAuthSignatures; // userIdHash => agentIdHash => signature
+    // mapping(bytes32 => mapping(bytes32 => bytes)) private agentAuthSignatures; // userIdHash => agentIdHash => signature
     address public admin;
 
     constructor(address admin_) {
