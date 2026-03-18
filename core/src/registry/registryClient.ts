@@ -1,35 +1,28 @@
 import { z } from "zod";
 import {
-  createPublicClient,
-  createWalletClient,
-  encodeFunctionData,
-  http,
   isAddress,
   keccak256,
   stringToHex,
   type Address,
   type Hex,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { celo, celoSepolia } from "viem/chains";
 import { AppError, toAppError } from "../errors";
 import { err, ok, type Result } from "../result";
 import { parseWithSchema, safeAsync, safeSync } from "../validation";
-import { SentryRegistryAbi } from "./abi";
 import { Personality, type Personality as PersonalityValue } from "../personality";
+import {
+  getUserRepository,
+  getAuthorizationRepository,
+  getTaskEscrowRepository,
+  getAuditLogRepository,
+  type CreateUserInput,
+  type CreateAuthorizationInput,
+  type CreateTaskEscrowInput,
+} from "../db/repository";
 
 export const RegistryEnvSchema = z
   .object({
-    SENTRY_REGISTRY_ADDRESS: z
-      .string()
-      .refine((v) => isAddress(v), { message: "SENTRY_REGISTRY_ADDRESS must be an address" })
-      .transform((v) => v as Address),
-    SENTRY_RPC_URL: z.string().url(),
-    SENTRY_CHAIN_ID: z.coerce.number().int().positive(),
-    AUTH: z
-      .string()
-      .refine((v) => /^0x[0-9a-fA-F]{64}$/.test(v), { message: "AUTH must be 32-byte hex" })
-      .transform((v) => v as Hex),
+    DATABASE_URL: z.string().url(),
   })
   .strict();
 
@@ -72,21 +65,21 @@ export function hashTaskId(taskId: string): Result<TaskIdHash> {
   });
 }
 
-function personalityToUint8(p: PersonalityValue): Result<number> {
-  return safeSync("core.registry.personalityToUint8", () => {
+function personalityToDb(p: PersonalityValue): Result<string> {
+  return safeSync("core.registry.personalityToDb", () => {
     switch (p) {
       case Personality.GUARDIAN:
-        return ok(0);
+        return ok("GUARDIAN");
       case Personality.ACCOUNTANT:
-        return ok(1);
+        return ok("ACCOUNTANT");
       case Personality.STRATEGIST:
-        return ok(2);
+        return ok("STRATEGIST");
       default:
         return err(
           new AppError({
             code: "INVALID_INPUT",
             message: "Unknown personality",
-            context: "core.registry.personalityToUint8",
+            context: "core.registry.personalityToDb",
             details: { p },
           }),
         );
@@ -94,92 +87,84 @@ function personalityToUint8(p: PersonalityValue): Result<number> {
   });
 }
 
-export class SentryRegistryClient {
-  private readonly env: RegistryEnv;
+function personalityFromDb(p: string): Result<PersonalityValue> {
+  return safeSync("core.registry.personalityFromDb", () => {
+    switch (p) {
+      case "GUARDIAN":
+        return ok(Personality.GUARDIAN);
+      case "ACCOUNTANT":
+        return ok(Personality.ACCOUNTANT);
+      case "STRATEGIST":
+        return ok(Personality.STRATEGIST);
+      default:
+        return err(
+          new AppError({
+            code: "INVALID_INPUT",
+            message: "Unknown personality from database",
+            context: "core.registry.personalityFromDb",
+            details: { p },
+          }),
+        );
+    }
+  });
+}
 
-  constructor(env: RegistryEnv) {
-    this.env = env;
+/**
+ * SentryRegistryClient - Database-based implementation
+ * 
+ * This client uses PostgreSQL (via Prisma) instead of on-chain contract calls.
+ * This enables:
+ * - Instant, gasless revocation of signatures
+ * - Faster reads for authorization checks
+ * - Better auditability of all operations
+ */
+export class SentryRegistryClient {
+  private readonly userRepo = getUserRepository();
+  private readonly authRepo = getAuthorizationRepository();
+  private readonly escrowRepo = getTaskEscrowRepository();
+  private readonly auditLogRepo = getAuditLogRepository();
+
+  constructor() {
+    // Database client is initialized lazily via the repository
   }
 
   static fromProcessEnv(): Result<SentryRegistryClient> {
     return safeSync("core.registry.fromProcessEnv", () => {
-      const parsed = parseWithSchema(RegistryEnvSchema, process.env, "core.registry.env");
-      if (!parsed.ok) return parsed;
-      return ok(new SentryRegistryClient(parsed.value));
-    });
-  }
-
-  private publicClient() {
-    return createPublicClient({
-      transport: http(this.env.SENTRY_RPC_URL),
-    });
-  }
-
-  private walletClient() {
-    const account = privateKeyToAccount(this.env.AUTH);
-    return createWalletClient({
-      account,
-      transport: http(this.env.SENTRY_RPC_URL),
-    });
-  }
-
-  async isRegistered(userIdHash: UserIdHash): Promise<Result<boolean>> {
-    return safeAsync("core.registry.isRegistered", async () => {
-      try {
-        const client = this.publicClient();
-        const res = await client.readContract({
-          address: this.env.SENTRY_REGISTRY_ADDRESS,
-          abi: SentryRegistryAbi,
-          functionName: "isRegistered",
-          args: [userIdHash],
-        });
-        return ok(Boolean(res));
-      } catch (causeUnknown) {
+      // Validate that DATABASE_URL is set
+      const databaseUrl = process.env.DATABASE_URL;
+      if (!databaseUrl) {
         return err(
-          toAppError(causeUnknown, {
-            code: "SDK_ERROR",
-            message: "Failed to read registry",
-            context: "core.registry.isRegistered",
+          new AppError({
+            code: "CONFIG_ERROR",
+            message: "DATABASE_URL is not set in environment",
+            context: "core.registry.fromProcessEnv",
           }),
         );
       }
+      return ok(new SentryRegistryClient());
     });
   }
 
-  buildRegisterUserEncodedData(inputUnknown: unknown): Result<Hex> {
-    return safeSync("core.registry.buildRegisterUserEncodedData", () => {
-      const schema = z
-        .object({
-          userIdHash: z.string().refine((v) => v.startsWith("0x") && v.length === 66, {
-            message: "userIdHash must be bytes32 hex",
-          }),
-          owner: z.string().refine((v) => isAddress(v), { message: "owner must be address" }),
-          personality: z.enum([Personality.GUARDIAN, Personality.ACCOUNTANT, Personality.STRATEGIST]),
-        })
-        .strict();
-
-      const parsed = parseWithSchema(schema, inputUnknown, "core.registry.registerUser.input");
-      if (!parsed.ok) return parsed;
-
-      const personalityRes = personalityToUint8(parsed.value.personality);
-      if (!personalityRes.ok) return personalityRes;
-
-      const data = encodeFunctionData({
-        abi: SentryRegistryAbi,
-        functionName: "registerUser",
-        args: [parsed.value.userIdHash as Hex, parsed.value.owner as Address, personalityRes.value],
-      });
-      return ok(data);
+  /**
+   * Check if a user is registered in the database
+   */
+  async isRegistered(userIdHash: UserIdHash): Promise<Result<boolean>> {
+    return safeAsync("core.registry.isRegistered", async () => {
+      const result = await this.userRepo.findByHashedId(userIdHash);
+      if (!result.ok) return result as any;
+      return ok(result.value !== null);
     });
   }
 
-  async registerUserOnchain(inputUnknown: unknown): Promise<Result<Hex>> {
-    return safeAsync("core.registry.registerUserOnchain", async () => {
+  /**
+   * Register a new user in the database
+   * (Replaces on-chain registerUser)
+   */
+  async registerUser(inputUnknown: unknown): Promise<Result<CreateUserInput>> {
+    return safeAsync("core.registry.registerUser", async () => {
       const schema = z
         .object({
-          userIdHash: z.string().refine((v) => v.startsWith("0x") && v.length === 66, {
-            message: "userIdHash must be bytes32 hex",
-          }),
+          userIdHash: z.string().min(1),
           owner: z
             .string()
             .refine((v) => isAddress(v), { message: "owner must be address" })
@@ -187,119 +172,97 @@ export class SentryRegistryClient {
           personality: z.enum([Personality.GUARDIAN, Personality.ACCOUNTANT, Personality.STRATEGIST]),
         })
         .strict();
-      const parsed = parseWithSchema(schema, inputUnknown, "core.registry.registerUserOnchain.input");
-      if (!parsed.ok) return parsed;
 
-      const dataRes = this.buildRegisterUserEncodedData({
-        userIdHash: parsed.value.userIdHash,
-        owner: parsed.value.owner,
-        personality: parsed.value.personality,
-      });
-      if (!dataRes.ok) return dataRes;
+      const parsed = parseWithSchema(schema, inputUnknown, "core.registry.registerUser.input");
+      if (!parsed.ok) return parsed as any;
 
-      try {
-        const wc = this.walletClient();
-        const chainObj =
-          this.env.SENTRY_CHAIN_ID === 42220
-            ? celo
-            : this.env.SENTRY_CHAIN_ID === 44787
-              ? celoSepolia
-              : undefined;
-        if (!chainObj) {
-          return err(
-            new AppError({
-              code: "CONFIG_ERROR",
-              message: "SENTRY_CHAIN_ID must be 42220 or 44787",
-              context: "core.registry.registerUserOnchain.chain",
-            }),
-          );
-        }
-        const txHash = await wc.sendTransaction({
-          chain: chainObj,
-          to: this.env.SENTRY_REGISTRY_ADDRESS,
-          data: dataRes.value,
-        });
-        return ok(txHash);
-      } catch (causeUnknown) {
+      // Convert personality enum to string for database
+      const personalityRes = personalityToDb(parsed.value.personality);
+      if (!personalityRes.ok) return personalityRes as any;
+
+      // Check if user already exists
+      const existingUser = await this.userRepo.findByHashedId(parsed.value.userIdHash);
+      if (!existingUser.ok) return existingUser as any;
+      
+      if (existingUser.value) {
         return err(
-          toAppError(causeUnknown, {
-            code: "SDK_ERROR",
-            message: "Failed to register user on-chain",
-            context: "core.registry.registerUserOnchain",
+          new AppError({
+            code: "ALREADY_EXISTS",
+            message: "User already registered",
+            context: "core.registry.registerUser",
+            details: { userIdHash: parsed.value.userIdHash },
           }),
         );
       }
+
+      // Create the user
+      const createResult = await this.userRepo.create({
+        hashedId: parsed.value.userIdHash,
+        eoaAddress: parsed.value.owner.toLowerCase(),
+        personality: personalityRes.value as any,
+      });
+
+      if (!createResult.ok) return createResult as any;
+
+      // Log the registration
+      await this.auditLogRepo.create({
+        userHashedId: parsed.value.userIdHash,
+        action: "USER_REGISTERED",
+        details: { personality: personalityRes.value },
+      });
+
+      return ok(createResult.value);
     });
   }
 
-  async linkWalletOnchain(inputUnknown: unknown): Promise<Result<Hex>> {
-    return safeAsync("core.registry.linkWalletOnchain", async () => {
+  /**
+   * Link a wallet to an existing user
+   * (Replaces on-chain linkWallet)
+   */
+  async linkWallet(inputUnknown: unknown): Promise<Result<CreateUserInput>> {
+    return safeAsync("core.registry.linkWallet", async () => {
       const schema = z
         .object({
-          userIdHash: z.string().refine((v) => v.startsWith("0x") && v.length === 66, {
-            message: "userIdHash must be bytes32 hex",
-          }),
+          userIdHash: z.string().min(1),
           wallet: z
             .string()
             .refine((v) => isAddress(v), { message: "wallet must be address" })
             .transform((v) => v as Address),
         })
         .strict();
-      const parsed = parseWithSchema(schema, inputUnknown, "core.registry.linkWalletOnchain.input");
-      if (!parsed.ok) return parsed;
 
-      const data = encodeFunctionData({
-        abi: SentryRegistryAbi,
-        functionName: "linkWallet",
-        args: [parsed.value.userIdHash as Hex, parsed.value.wallet],
+      const parsed = parseWithSchema(schema, inputUnknown, "core.registry.linkWallet.input");
+      if (!parsed.ok) return parsed as any;
+
+      // Update the user's wallet address
+      const updateResult = await this.userRepo.updateWalletAddress(
+        parsed.value.userIdHash,
+        parsed.value.wallet,
+      );
+
+      if (!updateResult.ok) return updateResult as any;
+
+      // Log the wallet link
+      await this.auditLogRepo.create({
+        userHashedId: parsed.value.userIdHash,
+        action: "WALLET_LINKED",
+        details: { wallet: parsed.value.wallet },
       });
 
-      const chainObj =
-        this.env.SENTRY_CHAIN_ID === 42220
-          ? celo
-          : this.env.SENTRY_CHAIN_ID === 44787
-            ? celoSepolia
-            : undefined;
-      if (!chainObj) {
-        return err(
-          new AppError({
-            code: "CONFIG_ERROR",
-            message: "SENTRY_CHAIN_ID must be 42220 or 44787",
-            context: "core.registry.linkWalletOnchain.chain",
-          }),
-        );
-      }
-
-      try {
-        const wc = this.walletClient();
-        const txHash = await wc.sendTransaction({
-          chain: chainObj,
-          to: this.env.SENTRY_REGISTRY_ADDRESS,
-          data,
-        });
-        return ok(txHash);
-      } catch (causeUnknown) {
-        return err(
-          toAppError(causeUnknown, {
-            code: "SDK_ERROR",
-            message: "Failed to link wallet on-chain",
-            context: "core.registry.linkWalletOnchain",
-          }),
-        );
-      }
+      return ok(updateResult.value);
     });
   }
 
-  async reserveFundsOnchain(inputUnknown: unknown): Promise<Result<Hex>> {
-    return safeAsync("core.registry.reserveFundsOnchain", async () => {
+  /**
+   * Reserve funds for a task (create escrow)
+   * (Replaces on-chain reserveFunds)
+   */
+  async reserveFunds(inputUnknown: unknown): Promise<Result<CreateTaskEscrowInput>> {
+    return safeAsync("core.registry.reserveFunds", async () => {
       const schema = z
         .object({
-          userIdHash: z.string().refine((v) => v.startsWith("0x") && v.length === 66, {
-            message: "userIdHash must be bytes32 hex",
-          }),
-          taskIdHash: z.string().refine((v) => v.startsWith("0x") && v.length === 66, {
-            message: "taskIdHash must be bytes32 hex",
-          }),
+          userIdHash: z.string().min(1),
+          taskIdHash: z.string().min(1),
           token: z
             .string()
             .refine((v) => isAddress(v), { message: "token must be address" })
@@ -307,106 +270,219 @@ export class SentryRegistryClient {
           amount: z.coerce.bigint().positive(),
         })
         .strict();
-      const parsed = parseWithSchema(schema, inputUnknown, "core.registry.reserveFundsOnchain.input");
-      if (!parsed.ok) return parsed;
 
-      const data = encodeFunctionData({
-        abi: SentryRegistryAbi,
-        functionName: "reserveFunds",
-        args: [parsed.value.userIdHash as Hex, parsed.value.taskIdHash as Hex, parsed.value.token, parsed.value.amount],
-      });
+      const parsed = parseWithSchema(schema, inputUnknown, "core.registry.reserveFunds.input");
+      if (!parsed.ok) return parsed as any;
 
-      const chainObj =
-        this.env.SENTRY_CHAIN_ID === 42220
-          ? celo
-          : this.env.SENTRY_CHAIN_ID === 44787
-            ? celoSepolia
-            : undefined;
-      if (!chainObj) {
+      // Check if task escrow already exists
+      const existingEscrow = await this.escrowRepo.findByTaskId(parsed.value.taskIdHash);
+      if (!existingEscrow.ok) return existingEscrow as any;
+
+      if (existingEscrow.value) {
         return err(
           new AppError({
-            code: "CONFIG_ERROR",
-            message: "SENTRY_CHAIN_ID must be 42220 or 44787",
-            context: "core.registry.reserveFundsOnchain.chain",
+            code: "ALREADY_EXISTS",
+            message: "Task escrow already exists",
+            context: "core.registry.reserveFunds",
+            details: { taskIdHash: parsed.value.taskIdHash },
           }),
         );
       }
 
-      try {
-        const wc = this.walletClient();
-        const txHash = await wc.sendTransaction({
-          chain: chainObj,
-          to: this.env.SENTRY_REGISTRY_ADDRESS,
-          data,
-        });
-        return ok(txHash);
-      } catch (causeUnknown) {
-        return err(
-          toAppError(causeUnknown, {
-            code: "SDK_ERROR",
-            message: "Failed to reserve funds on-chain",
-            context: "core.registry.reserveFundsOnchain",
-          }),
-        );
-      }
+      // Create the escrow
+      const createResult = await this.escrowRepo.create({
+        taskId: parsed.value.taskIdHash,
+        userHashedId: parsed.value.userIdHash,
+        amount: parsed.value.amount.toString(),
+        status: "RESERVED",
+      });
+
+      if (!createResult.ok) return createResult as any;
+
+      // Log the reservation
+      await this.auditLogRepo.create({
+        userHashedId: parsed.value.userIdHash,
+        action: "FUNDS_RESERVED",
+        details: { 
+          taskIdHash: parsed.value.taskIdHash,
+          token: parsed.value.token,
+          amount: parsed.value.amount.toString(),
+        },
+      });
+
+      return ok(createResult.value);
     });
   }
 
-  async releaseReservationOnchain(inputUnknown: unknown): Promise<Result<Hex>> {
-    return safeAsync("core.registry.releaseReservationOnchain", async () => {
+  /**
+   * Release reserved funds for a task
+   * (Replaces on-chain releaseReservation)
+   */
+  async releaseReservation(inputUnknown: unknown): Promise<Result<void>> {
+    return safeAsync("core.registry.releaseReservation", async () => {
       const schema = z
         .object({
-          userIdHash: z.string().refine((v) => v.startsWith("0x") && v.length === 66, {
-            message: "userIdHash must be bytes32 hex",
-          }),
-          taskIdHash: z.string().refine((v) => v.startsWith("0x") && v.length === 66, {
-            message: "taskIdHash must be bytes32 hex",
-          }),
+          userIdHash: z.string().min(1),
+          taskIdHash: z.string().min(1),
         })
         .strict();
-      const parsed = parseWithSchema(schema, inputUnknown, "core.registry.releaseReservationOnchain.input");
-      if (!parsed.ok) return parsed;
 
-      const data = encodeFunctionData({
-        abi: SentryRegistryAbi,
-        functionName: "releaseReservation",
-        args: [parsed.value.userIdHash as Hex, parsed.value.taskIdHash as Hex],
-      });
+      const parsed = parseWithSchema(schema, inputUnknown, "core.registry.releaseReservation.input");
+      if (!parsed.ok) return parsed as any;
 
-      const chainObj =
-        this.env.SENTRY_CHAIN_ID === 42220
-          ? celo
-          : this.env.SENTRY_CHAIN_ID === 44787
-            ? celoSepolia
-            : undefined;
-      if (!chainObj) {
+      // Check if escrow exists
+      const existingEscrow = await this.escrowRepo.findByTaskId(parsed.value.taskIdHash);
+      if (!existingEscrow.ok) return existingEscrow as any;
+
+      if (!existingEscrow.value) {
         return err(
           new AppError({
-            code: "CONFIG_ERROR",
-            message: "SENTRY_CHAIN_ID must be 42220 or 44787",
-            context: "core.registry.releaseReservationOnchain.chain",
+            code: "NOT_FOUND",
+            message: "Task escrow not found",
+            context: "core.registry.releaseReservation",
+            details: { taskIdHash: parsed.value.taskIdHash },
           }),
         );
       }
 
-      try {
-        const wc = this.walletClient();
-        const txHash = await wc.sendTransaction({
-          chain: chainObj,
-          to: this.env.SENTRY_REGISTRY_ADDRESS,
-          data,
-        });
-        return ok(txHash);
-      } catch (causeUnknown) {
+      // Update the escrow status
+      const updateResult = await this.escrowRepo.updateStatus(parsed.value.taskIdHash, "RELEASED");
+      if (!updateResult.ok) return updateResult as any;
+
+      // Log the release
+      await this.auditLogRepo.create({
+        userHashedId: parsed.value.userIdHash,
+        action: "FUNDS_RELEASED",
+        details: { taskIdHash: parsed.value.taskIdHash },
+      });
+
+      return ok(undefined);
+    });
+  }
+
+  /**
+   * Get signature for a specific wallet (for KeylessClient)
+   * This is the secure method to retrieve signatures for agent operations
+   */
+  async getSignatureForWallet(walletAddress: string, agentId?: string): Promise<Result<CreateAuthorizationInput | null>> {
+    return safeAsync("core.registry.getSignatureForWallet", async () => {
+      const result = await this.authRepo.getSignatureForWallet(walletAddress, agentId);
+      return result;
+    });
+  }
+
+  /**
+   * Create an authorization (store signature)
+   * This is called when a signature is collected via the deep-link
+   */
+  async createAuthorization(inputUnknown: unknown): Promise<Result<CreateAuthorizationInput>> {
+    return safeAsync("core.registry.createAuthorization", async () => {
+      const schema = z
+        .object({
+          userHashedId: z.string().min(1),
+          agentId: z.string().min(1).max(128),
+          signature: z.string().min(1), // raw hex signature
+          maxSpend: z.string().min(1),
+          expiresAt: z.number().int().positive(), // Unix timestamp
+        })
+        .strict();
+
+      const parsed = parseWithSchema(schema, inputUnknown, "core.registry.createAuthorization.input");
+      if (!parsed.ok) return parsed as any;
+
+      // Verify user exists
+      const userResult = await this.userRepo.findByHashedId(parsed.value.userHashedId);
+      if (!userResult.ok) return userResult as any;
+
+      if (!userResult.value) {
         return err(
-          toAppError(causeUnknown, {
-            code: "SDK_ERROR",
-            message: "Failed to release reservation on-chain",
-            context: "core.registry.releaseReservationOnchain",
+          new AppError({
+            code: "NOT_FOUND",
+            message: "User not found",
+            context: "core.registry.createAuthorization",
           }),
         );
       }
+
+      // Deactivate any existing active authorizations for this agent
+      await this.authRepo.revoke(parsed.value.userHashedId, parsed.value.agentId);
+
+      // Create the new authorization
+      const createResult = await this.authRepo.create({
+        userHashedId: parsed.value.userHashedId,
+        agentId: parsed.value.agentId,
+        signature: parsed.value.signature,
+        maxSpend: parsed.value.maxSpend,
+        expiresAt: parsed.value.expiresAt,
+      });
+
+      if (!createResult.ok) return createResult as any;
+
+      // Log the authorization
+      await this.auditLogRepo.create({
+        userHashedId: parsed.value.userHashedId,
+        action: "AUTHORIZATION_CREATED",
+        details: { 
+          agentId: parsed.value.agentId,
+          maxSpend: parsed.value.maxSpend,
+          expiresAt: parsed.value.expiresAt,
+        },
+      });
+
+      return ok(createResult.value);
+    });
+  }
+
+  /**
+   * Revoke an authorization (instant, gasless)
+   */
+  async revokeAuthorization(inputUnknown: unknown): Promise<Result<void>> {
+    return safeAsync("core.registry.revokeAuthorization", async () => {
+      const schema = z
+        .object({
+          userHashedId: z.string().min(1),
+          agentId: z.string().min(1).max(128),
+        })
+        .strict();
+
+      const parsed = parseWithSchema(schema, inputUnknown, "core.registry.revokeAuthorization.input");
+      if (!parsed.ok) return parsed as any;
+
+      // Revoke the authorization
+      const revokeResult = await this.authRepo.revoke(parsed.value.userHashedId, parsed.value.agentId);
+      if (!revokeResult.ok) return revokeResult as any;
+
+      // Log the revocation
+      await this.auditLogRepo.create({
+        userHashedId: parsed.value.userHashedId,
+        action: "AUTHORIZATION_REVOKED",
+        details: { agentId: parsed.value.agentId },
+      });
+
+      return ok(undefined);
+    });
+  }
+
+  /**
+   * Get user by hashed ID
+   */
+  async getUser(userIdHash: string): Promise<Result<CreateUserInput | null>> {
+    return safeAsync("core.registry.getUser", async () => {
+      const result = await this.userRepo.findByHashedId(userIdHash);
+      return result;
+    });
+  }
+
+  /**
+   * Get user by EOA address
+   */
+  async getUserByEoa(eoaAddress: string): Promise<Result<CreateUserInput | null>> {
+    return safeAsync("core.registry.getUserByEoa", async () => {
+      const result = await this.userRepo.findByEoaAddress(eoaAddress);
+      return result;
     });
   }
 }
 
+// Legacy type aliases for backward compatibility
+export type { CreateUserInput, CreateAuthorizationInput, CreateTaskEscrowInput };

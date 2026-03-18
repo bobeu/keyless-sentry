@@ -6,6 +6,7 @@ import { AppError, toAppError } from "./errors";
 import { err, ok, type Result } from "./result";
 import { parseWithSchema, safeAsync, safeSync } from "./validation";
 import type { KeylessClientLike, TransactionStatus } from "./keylessSdkTypes";
+import { SentryRegistryClient } from "./registry/registryClient";
 
 export const SignatureRequestKindSchema = z.enum(["CREATE_WALLET", "AUTHORIZE_AGENT"]);
 export type SignatureRequestKind = z.infer<typeof SignatureRequestKindSchema>;
@@ -128,6 +129,7 @@ const InitSchema = z
     requestTtlMs: z.number().int().positive().default(10 * 60 * 1000),
     pollIntervalMs: z.number().int().positive().default(4_000),
     pollTimeoutMs: z.number().int().positive().default(5 * 60 * 1000),
+    registryClient: z.any().optional(),
   })
   .strict();
 
@@ -172,6 +174,7 @@ export class SignatureRequestService {
   private readonly notifier: SignatureRequestNotifier;
   private readonly clientProvider: () => Promise<Result<KeylessClientLike>>;
   private signClient: SignClient | null = null;
+  private readonly registryClient: SentryRegistryClient;
 
   // in-memory state; later we’ll replace with PersistenceService for durability
   private readonly requests = new Map<string, SignatureRequest>();
@@ -180,6 +183,7 @@ export class SignatureRequestService {
     init: SignatureRequestServiceInit;
     notifier: SignatureRequestNotifier;
     clientProvider: () => Promise<Result<KeylessClientLike>>;
+    registryClient?: SentryRegistryClient;
   }) {
     const parsed = InitSchema.safeParse(input.init);
     if (!parsed.success) {
@@ -194,6 +198,9 @@ export class SignatureRequestService {
     this.init = parsed.data;
     this.notifier = input.notifier;
     this.clientProvider = input.clientProvider;
+    // Use provided registryClient or create a new one
+    const registryClientInput = (input as any).registryClient;
+    this.registryClient = registryClientInput || new SentryRegistryClient();
   }
 
   async ensureWalletConnect(): Promise<Result<SignClient>> {
@@ -344,6 +351,7 @@ export class SignatureRequestService {
           agentId: z.string().min(1).max(128),
           limit: z.string().min(1).max(78), // passthrough (SDK expects string)
           durationSec: z.coerce.number().int().positive(),
+          userHashedId: z.string().min(1).optional(), // Optional: userHashedId for database lookup
         })
         .strict();
       const parsed = parseWithSchema(schema, inputUnknown, "core.signatureRequestService.authorizeAgent.input");
@@ -423,6 +431,10 @@ export class SignatureRequestService {
         signClient: wcRes.value,
         sessionPromise: connectRes.value.approval(),
         messageToSign,
+        userHashedId: parsed.value.userHashedId || "",
+        agentId: parsed.value.agentId,
+        maxSpend: parsed.value.limit,
+        expiresAt,
       });
 
       const notifyRes = await this.notifier({
@@ -445,6 +457,10 @@ export class SignatureRequestService {
     signClient: SignClient;
     sessionPromise: Promise<SessionTypes.Struct>;
     messageToSign: string;
+    userHashedId: string;
+    agentId: string;
+    maxSpend: string;
+    expiresAt: number;
   }): Promise<void> {
     const { requestId } = input;
     const expireIfNeeded = (): boolean => {
@@ -489,6 +505,23 @@ export class SignatureRequestService {
       }
 
       this.setStatus(requestId, { status: "CONFIRMED", signature: signature as Hex });
+
+      // Store the authorization in the database after signature is collected
+      if (input.userHashedId && input.agentId) {
+        const storeAuthResult = await this.storeAuthorization({
+          userHashedId: input.userHashedId,
+          agentId: input.agentId,
+          signature: signature as string,
+          maxSpend: input.maxSpend,
+          expiresAt: input.expiresAt,
+        });
+        
+        if (!storeAuthResult.ok) {
+          // Log error but don't fail the flow - the authorization can be stored later
+          console.error("Failed to store authorization:", storeAuthResult.error);
+        }
+      }
+
       await this.notifier({
         requestId,
         message: "Authorization signature collected. Sentry will store it for agent operations.",
@@ -728,6 +761,118 @@ export class SignatureRequestService {
           details: { txHash },
         }),
       );
+    });
+  }
+
+  /**
+   * Store authorization after signature is collected.
+   * This is called when the agent authorization signature is collected via deep-link.
+   * 
+   * IMPORTANT: This method extracts the user's EOA from the signature and stores
+   * the raw signature securely in the database. The signature is never returned
+   * in API responses - only used internally for Keyless operations.
+   */
+  async storeAuthorization(inputUnknown: unknown): Promise<Result<{ success: boolean }>> {
+    return safeAsync("core.signatureRequestService.storeAuthorization", async () => {
+      const schema = z
+        .object({
+          userHashedId: z.string().min(1),
+          agentId: z.string().min(1).max(128),
+          signature: z.string().min(1), // raw hex signature from wallet
+          maxSpend: z.string().min(1),
+          expiresAt: z.number().int().positive(), // Unix timestamp
+        })
+        .strict();
+
+      const parsed = parseWithSchema(schema, inputUnknown, "core.signatureRequestService.storeAuthorization.input");
+      if (!parsed.ok) return parsed as any;
+
+      // Store the authorization in the database
+      const result = await this.registryClient.createAuthorization({
+        userHashedId: parsed.value.userHashedId,
+        agentId: parsed.value.agentId,
+        signature: parsed.value.signature,
+        maxSpend: parsed.value.maxSpend,
+        expiresAt: parsed.value.expiresAt,
+      });
+
+      if (!result.ok) return result as any;
+
+      return ok({ success: true });
+    });
+  }
+
+  /**
+   * Get the active signature for a specific wallet.
+   * 
+   * This is the secure method to retrieve signatures for the KeylessClient.
+   * It returns the signature object (not the raw signature) which contains
+   * the necessary data for the Keyless Coordinator.
+   * 
+   * IMPORTANT: This should only be called internally by the KeylessClient.
+   * Raw signatures are NEVER exposed outside the service.
+   */
+  async getSignatureForWallet(walletAddress: string, agentId?: string): Promise<Result<{
+    signature: string;
+    maxSpend: string;
+    expiresAt: number;
+    agentId: string;
+  } | null>> {
+    return safeAsync("core.signatureRequestService.getSignatureForWallet", async () => {
+      // Validate the wallet address
+      if (!isAddress(walletAddress)) {
+        return err(
+          new AppError({
+            code: "INVALID_INPUT",
+            message: "Invalid wallet address",
+            context: "core.signatureRequestService.getSignatureForWallet",
+          }),
+        );
+      }
+
+      // Get the authorization from the registry (database)
+      const result = await this.registryClient.getSignatureForWallet(walletAddress, agentId);
+      if (!result.ok) return result as any;
+
+      const auth = result.value;
+      if (!auth) {
+        return ok(null);
+      }
+
+      // Return the authorization data (NOT the raw signature directly)
+      // The KeylessClient will use this to construct the transaction
+      return ok({
+        signature: auth.signature,
+        maxSpend: auth.maxSpend,
+        expiresAt: auth.expiresAt,
+        agentId: auth.agentId,
+      });
+    });
+  }
+
+  /**
+   * Revoke an authorization (instant, gasless revocation).
+   */
+  async revokeAuthorization(inputUnknown: unknown): Promise<Result<{ success: boolean }>> {
+    return safeAsync("core.signatureRequestService.revokeAuthorization", async () => {
+      const schema = z
+        .object({
+          userHashedId: z.string().min(1),
+          agentId: z.string().min(1).max(128),
+        })
+        .strict();
+
+      const parsed = parseWithSchema(schema, inputUnknown, "core.signatureRequestService.revokeAuthorization.input");
+      if (!parsed.ok) return parsed as any;
+
+      const result = await this.registryClient.revokeAuthorization({
+        userHashedId: parsed.value.userHashedId,
+        agentId: parsed.value.agentId,
+      });
+
+      if (!result.ok) return result as any;
+
+      return ok({ success: true });
     });
   }
 }

@@ -6,6 +6,10 @@ export const AppErrorCodeSchema = z.enum([
   "SDK_ERROR",
   "COMMAND_ERROR",
   "INTERNAL_ERROR",
+  "ALREADY_EXISTS",
+  "NOT_FOUND",
+  "DB_ERROR",
+  "CONTRACT_ERROR",
 ]);
 
 export type AppErrorCode = z.infer<typeof AppErrorCodeSchema>;

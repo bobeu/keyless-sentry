@@ -5,6 +5,7 @@ import { err, ok, type Result } from "../result";
 import { parseWithSchema, safeAsync } from "../validation";
 import type { SentryRegistryClient, UserIdHash } from "../registry/registryClient";
 import { hashTaskId } from "../registry/registryClient";
+import { getTaskEscrowRepository, type CreateTaskEscrowInput } from "../db/repository";
 
 export const ReserveFundsRequestSchema = z
   .object({
@@ -23,7 +24,7 @@ export type ReserveFundsRequest = z.infer<typeof ReserveFundsRequestSchema>;
 export async function reserveFunds(
   registry: SentryRegistryClient,
   requestUnknown: unknown,
-): Promise<Result<{ txHash: string; taskIdHash: string }>> {
+): Promise<Result<CreateTaskEscrowInput>> {
   return safeAsync("core.skills.escrow.reserveFunds", async () => {
     const reqRes = parseWithSchema(
       ReserveFundsRequestSchema,
@@ -33,9 +34,9 @@ export async function reserveFunds(
     if (!reqRes.ok) return reqRes;
 
     const taskHashRes = hashTaskId(reqRes.value.taskId);
-    if (!taskHashRes.ok) return taskHashRes as Result<{ txHash: string; taskIdHash: string }>;
+    if (!taskHashRes.ok) return taskHashRes as Result<CreateTaskEscrowInput>;
 
-    const txRes = await registry.reserveFundsOnchain({
+    const txRes = await registry.reserveFunds({
       userIdHash: reqRes.value.userIdHash as UserIdHash,
       taskIdHash: taskHashRes.value,
       token: reqRes.value.token,
@@ -43,7 +44,7 @@ export async function reserveFunds(
     });
     if (!txRes.ok) return txRes;
 
-    return ok({ txHash: txRes.value, taskIdHash: taskHashRes.value });
+    return ok(txRes.value);
   });
 }
 
@@ -59,7 +60,7 @@ export type ReleaseFundsRequest = z.infer<typeof ReleaseFundsRequestSchema>;
 export async function releaseFunds(
   registry: SentryRegistryClient,
   requestUnknown: unknown,
-): Promise<Result<{ txHash: string; taskIdHash: string }>> {
+): Promise<Result<CreateTaskEscrowInput>> {
   return safeAsync("core.skills.escrow.releaseFunds", async () => {
     const reqRes = parseWithSchema(
       ReleaseFundsRequestSchema,
@@ -69,15 +70,29 @@ export async function releaseFunds(
     if (!reqRes.ok) return reqRes;
 
     const taskHashRes = hashTaskId(reqRes.value.taskId);
-    if (!taskHashRes.ok) return taskHashRes as Result<{ txHash: string; taskIdHash: string }>;
+    if (!taskHashRes.ok) return taskHashRes as Result<CreateTaskEscrowInput>;
 
-    const txRes = await registry.releaseReservationOnchain({
+    // Release the reservation (returns void)
+    const txRes = await registry.releaseReservation({
       userIdHash: reqRes.value.userIdHash as UserIdHash,
       taskIdHash: taskHashRes.value,
     });
     if (!txRes.ok) return txRes;
 
-    return ok({ txHash: txRes.value, taskIdHash: taskHashRes.value });
+    // Fetch the updated escrow to return
+    const escrowRepo = getTaskEscrowRepository();
+    const escrowRes = await escrowRepo.findByTaskId(taskHashRes.value);
+    if (!escrowRes.ok) return escrowRes as Result<CreateTaskEscrowInput>;
+    if (!escrowRes.value) {
+      return err(
+        new AppError({
+          code: "NOT_FOUND",
+          message: "Task escrow not found after release",
+          context: "core.skills.escrow.releaseFunds",
+        }),
+      );
+    }
+
+    return ok(escrowRes.value);
   });
 }
-

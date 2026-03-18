@@ -7,10 +7,12 @@ import {
   type Address,
   type Hex,
 } from "viem";
+import { simulateContract } from "viem/actions";
 import { AppError } from "../errors";
 import { err, ok, type Result } from "../result";
 import { parseWithSchema, safeAsync, safeSync } from "../validation";
 import { Personality, type Personality as PersonalityValue } from "../personality";
+import { getAuthorizationRepository } from "../db/repository";
 
 export const ActionRequestSchema = z
   .object({
@@ -48,6 +50,45 @@ export const TransferIntentSchema = z
   .strict();
 
 export type TransferIntent = z.infer<typeof TransferIntentSchema>;
+
+/**
+ * Schema for pre-flight transaction simulation request
+ */
+export const PreFlightCheckSchema = z
+  .object({
+    from: z
+      .string()
+      .refine((v) => isAddress(v), { message: "from must be an address" })
+      .transform((v) => v as Address),
+    to: z
+      .string()
+      .refine((v) => isAddress(v), { message: "to must be an address" })
+      .transform((v) => v as Address),
+    data: z.string().default("0x"),
+    value: z.string().default("0"),
+    abi: z.any(), // Contract ABI
+    functionName: z.string(),
+    args: z.array(z.unknown()).optional(),
+  })
+  .strict();
+
+export type PreFlightCheckInput = z.infer<typeof PreFlightCheckSchema>;
+
+/**
+ * Schema for authorization verification request
+ */
+export const AuthCheckSchema = z
+  .object({
+    eoaAddress: z
+      .string()
+      .refine((v) => isAddress(v), { message: "eoaAddress must be an address" })
+      .transform((v) => v as Address),
+    agentId: z.string().min(1).max(128),
+    amount: z.string().min(1), // Amount to spend in wei
+  })
+  .strict();
+
+export type AuthCheckInput = z.infer<typeof AuthCheckSchema>;
 
 export const PersonalityEngineInitSchema = z
   .object({
@@ -238,6 +279,116 @@ export class PersonalityEngine {
           }),
         );
       }
+    });
+  }
+
+  /**
+   * Pre-Flight Check: Simulate a transaction before execution to detect issues early.
+   * This uses viem's simulateContract to catch reverts before they happen on-chain.
+   */
+  async preFlightCheck(inputUnknown: unknown): Promise<Result<{ success: boolean; error?: string }>> {
+    return safeAsync("core.reasoning.personalityEngine.preFlightCheck", async () => {
+      const parsed = parseWithSchema(PreFlightCheckSchema, inputUnknown, "core.personalityEngine.preFlightCheck.input");
+      if (!parsed.ok) return parsed as any;
+
+      const { from, to, data, value, abi, functionName, args } = parsed.value;
+
+      try {
+        const pc = this.publicClient();
+        const result = await simulateContract(pc, {
+          address: to,
+          abi,
+          functionName,
+          args: args || [],
+          value: BigInt(value),
+        });
+
+        // Simulation succeeded - transaction would likely succeed
+        return ok({ success: true });
+      } catch (causeUnknown) {
+        // Simulation failed - capture the error message
+        let errorMessage = "Transaction simulation failed";
+        if (causeUnknown instanceof Error) {
+          errorMessage = causeUnknown.message;
+        }
+
+        return ok({ success: false, error: errorMessage });
+      }
+    });
+  }
+
+  /**
+   * Auth Check: Verify the AgentAuthorization from Postgres before allowing a transaction.
+   * Checks:
+   * 1. Authorization exists and is active
+   * 2. Authorization has not expired
+   * 3. Amount is within the maxSpend limit
+   */
+  async verifyAuthorization(inputUnknown: unknown): Promise<Result<{
+    authorized: boolean;
+    reason?: string;
+    expiresAt?: number;
+    maxSpend?: string;
+  }>> {
+    return safeAsync("core.reasoning.personalityEngine.verifyAuthorization", async () => {
+      const parsed = parseWithSchema(AuthCheckSchema, inputUnknown, "core.personalityEngine.verifyAuthorization.input");
+      if (!parsed.ok) return parsed as any;
+
+      const { eoaAddress, agentId, amount } = parsed.value;
+
+      // Get authorization from database
+      const authRepo = getAuthorizationRepository();
+      const authRes = await authRepo.getSignatureForWallet(eoaAddress.toString(), agentId);
+
+      if (!authRes.ok) {
+        return err(
+          new AppError({
+            code: "DB_ERROR",
+            message: "Failed to verify authorization",
+            context: "core.personalityEngine.verifyAuthorization",
+            causeUnknown: authRes.error,
+          }),
+        );
+      }
+
+      const auth = authRes.value;
+
+      // Check if authorization exists
+      if (!auth) {
+        return ok({
+          authorized: false,
+          reason: `No active authorization found for agent ${agentId}. Please run /authorize-agent first.`,
+        });
+      }
+
+      // Check expiration
+      const now = Math.floor(Date.now() / 1000);
+      if (auth.expiresAt < now) {
+        return ok({
+          authorized: false,
+          reason: `Authorization expired on ${new Date(auth.expiresAt * 1000).toISOString()}. Please re-authorize.`,
+          expiresAt: auth.expiresAt,
+        });
+      }
+
+      // Check maxSpend limit
+      const amountBigInt = BigInt(amount);
+      const maxSpendBigInt = BigInt(auth.maxSpend);
+
+      if (amountBigInt > maxSpendBigInt) {
+        return ok({
+          authorized: false,
+          reason: `Amount ${amount} exceeds maxSpend limit ${auth.maxSpend}. Authorization allows up to ${auth.maxSpend}.`,
+          maxSpend: auth.maxSpend,
+        });
+      }
+
+      // All checks passed
+      return ok({
+        authorized: true,
+        expiresAt: auth.expiresAt,
+        maxSpend: auth.maxSpend,
+      });
     });
   }
 }
