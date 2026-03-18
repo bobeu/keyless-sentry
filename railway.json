@@ -1,48 +1,40 @@
-# Railway Deployment Configuration
-# This file is optimized for Railway.app deployment
-# Use: railway deploy
-
-services:
-  sentry-gateway:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - 18789:18789
-    environment:
-      - NODE_ENV=production
-      - IS_TEE=false
-      - HEARTBEAT_INTERVAL_MINUTES=30
-      - WORKSPACE_DIR=/app/gateway/src/workspace
-    volumes:
-      - /app/gateway/src/workspace
-    deploy:
-      resources:
-        memory: 512M
-
-  postgres:
-    image: postgres:15-alpine
-    environment:
-      - POSTGRES_USER=sentry
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=sentry
-    volumes:
-      - /var/lib/postgresql/data
-    deploy:
-      resources:
-        memory: 256M
-
-# Railway automatically injects these variables:
-# - RAILWAY_TOKEN
-# - RAILWAY_PROJECT_ID
-# - POSTGRES_PASSWORD (from linked PostgreSQL service)
-# 
-# Required environment variables to set in Railway:
-# - KEYLESS_BASE_URL
-# - KEYLESS_CHAIN_ID
-# - KEYLESS_OWNER
-# - ENCRYPTION_KEY (64 hex chars)
-# - SENTRY_REGISTRY_ADDRESS
-# - SENTRY_RPC_URL
-# - SENTRY_CHAIN_ID
-# - WALLETCONNECT_PROJECT_ID
+{
+  "$schema": "https://railway.app/schema.json",
+  "name": "keyless-sentry",
+  "services": {
+    "sentry-gateway": {
+      "build": {
+        "context": ".",
+        "dockerfile": "Dockerfile"
+      },
+      "ports": {
+        "18789": {
+          "port": 18789,
+          "proxy": true
+        }
+      },
+      "environment": [
+        "NODE_ENV=production",
+        "IS_TEE=false",
+        "HEARTBEAT_INTERVAL_MINUTES=30",
+        "WORKSPACE_DIR=/app/gateway/src/workspace"
+      ],
+      "volumes": {
+        "/app/gateway/src/workspace": {}
+      },
+      "deploy": {
+        "memory": 512
+      }
+    }
+  },
+  "environmentVariables": {
+    "KEYLESS_BASE_URL": "",
+    "KEYLESS_CHAIN_ID": "",
+    "KEYLESS_OWNER": "",
+    "ENCRYPTION_KEY": "",
+    "SENTRY_REGISTRY_ADDRESS": "",
+    "SENTRY_RPC_URL": "",
+    "SENTRY_CHAIN_ID": "",
+    "WALLETCONNECT_PROJECT_ID": ""
+  }
+}
