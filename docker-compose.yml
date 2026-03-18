@@ -37,6 +37,7 @@ services:
       - "18789:18789"
     volumes:
       - openclaw_storage:/root/.openclaw/storage
+      - workspace_data:/app/gateway/src/workspace
     mem_limit: 512mb
 
   sentry-gateway:
@@ -61,8 +62,10 @@ services:
       - "18790:18789"
     volumes:
       - openclaw_storage:/root/.openclaw/storage
+      - workspace_data:/app/gateway/src/workspace
     mem_limit: 512mb
 
 volumes:
   openclaw_storage:
   postgres_data:
+  workspace_data:

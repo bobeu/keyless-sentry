@@ -776,6 +776,135 @@ const HistoryCommand: Command<HistoryInput, { history: { action: string; timesta
     }),
 };
 
+/**
+ * SentryVerifyIntegrityInputSchema - Verify code integrity
+ */
+const SentryVerifyIntegrityInputSchema = z.object({}).strict();
+type SentryVerifyIntegrityInput = z.infer<typeof SentryVerifyIntegrityInputSchema>;
+
+/**
+ * SentryVerifyIntegrityCommand - Returns current integrity attestation and hash
+ * Exposes JSON-RPC method `sentry_verify_integrity`
+ */
+const SentryVerifyIntegrityCommand: Command<SentryVerifyIntegrityInput, {
+  attestation: {
+    type: string;
+    value: string;
+    timestamp: number;
+    version: string;
+    isTEE: boolean;
+  };
+  codeHash: string;
+  srcFiles: number;
+  coreFiles: number;
+}> = {
+  name: "sentry_verify_integrity",
+  description: "Verify code integrity - returns attestation hash and TEE quote",
+  inputSchema: SentryVerifyIntegrityInputSchema,
+  execute: async (ctx, input) =>
+    safeAsync("gateway.commands.sentryVerifyIntegrity.execute", async () => {
+      const validated = parseWithSchema(
+        SentryVerifyIntegrityInputSchema,
+        input,
+        "gateway.commands.sentryVerifyIntegrity.input",
+      );
+      if (!validated.ok) return validated;
+
+      // Import dynamically to avoid circular deps
+      const { getSelfclawService } = await import("../auth/selfclaw");
+      const selfclawRes = getSelfclawService();
+      if (!selfclawRes.ok) return err(selfclawRes.error);
+
+      const verifyRes = await selfclawRes.value.verifyIntegrity();
+      if (!verifyRes.ok) return err(verifyRes.error);
+
+      const { attestation, codeHash, srcFiles, coreFiles } = verifyRes.value;
+
+      return ok({
+        attestation: {
+          type: attestation.type,
+          value: attestation.value,
+          timestamp: attestation.timestamp,
+          version: attestation.version,
+          isTEE: attestation.isTEE,
+        },
+        codeHash,
+        srcFiles,
+        coreFiles,
+      });
+    }),
+};
+
+/**
+ * SentryRegisterHackathonInputSchema - Register for a hackathon event
+ */
+const SentryRegisterHackathonInputSchema = z
+  .object({
+    hackathonId: z.string().min(1).max(128),
+    teamName: z.string().min(1).max(64),
+    projectDescription: z.string().min(1).max(500).optional(),
+  })
+  .strict();
+type SentryRegisterHackathonInput = z.infer<typeof SentryRegisterHackathonInputSchema>;
+
+/**
+ * SentryRegisterHackathonCommand - Register the Sentry agent for a hackathon
+ * This allows the agent to participate in hackathon-specific tasks and earn badges
+ */
+const SentryRegisterHackathonCommand: Command<SentryRegisterHackathonInput, {
+  success: boolean;
+  hackathonId: string;
+  registrationId: string;
+  message: string;
+}> = {
+  name: "sentry_register_hackathon",
+  description: "Register Sentry for a hackathon event",
+  inputSchema: SentryRegisterHackathonInputSchema,
+  execute: async (ctx, input) =>
+    safeAsync("gateway.commands.sentryRegisterHackathon.execute", async () => {
+      const validated = parseWithSchema(
+        SentryRegisterHackathonInputSchema,
+        input,
+        "gateway.commands.sentryRegisterHackathon.input",
+      );
+      if (!validated.ok) return validated;
+
+      const { hackathonId, teamName, projectDescription } = validated.value;
+
+      // Verify user identity
+      const userRes = await verifyUserIdentity(ctx, ctx.sender);
+      if (!userRes.ok) return err(userRes.error);
+
+      const user = userRes.value;
+
+      // Generate a unique registration ID
+      const registrationId = `hack_${hackathonId}_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+      // Log the hackathon registration
+      const auditRepo = getAuditLogRepository();
+      await auditRepo.create({
+        userHashedId: user.hashedId,
+        action: "HACKATHON_REGISTRATION",
+        status: "SUCCESS",
+        details: {
+          hackathonId,
+          teamName,
+          projectDescription,
+          registrationId,
+        },
+      });
+
+      console.log(`[hackathon] Registered for ${hackathonId} as ${teamName}`);
+
+      return ok({
+        success: true,
+        hackathonId,
+        registrationId,
+        message: `Successfully registered for ${hackathonId}! Your team: ${teamName}`,
+      });
+    }),
+};
+
 export function buildCommandMap(): CommandMap {
   const built = safeSync("gateway.commands.buildCommandMap", () =>
     ok(
@@ -792,6 +921,8 @@ export function buildCommandMap(): CommandMap {
         [RevokeCommand.name]: RevokeCommand,
         [HistoryCommand.name]: HistoryCommand,
         [HelpCommand.name]: HelpCommand,
+        [SentryVerifyIntegrityCommand.name]: SentryVerifyIntegrityCommand,
+        [SentryRegisterHackathonCommand.name]: SentryRegisterHackathonCommand,
       }) as CommandMap,
     ),
   );

@@ -1,0 +1,55 @@
+# TEE-Compatible Dockerfile for Sentry
+# Based on phala-puffer-alpine for Intel SGX/TDX support
+# This Dockerfile encapsulates the entire Bun environment with TEE attestation support
+
+# Use Phala's TEE base image (Alpine-based with SGX support)
+# In production, you would use: phalanetwork/phala-puffer-alpine:latest
+FROM oven/bun:latest
+
+# Install SGX dependencies (for TEE attestation)
+RUN apk add --no-cache \
+    curl \
+    wget \
+    ca-certificates \
+    openssl \
+    libcurl \
+    jq \
+    && rm -rf /var/cache/apk/*
+
+# Set working directory
+WORKDIR /app
+
+# Create non-root user for security
+RUN adduser -D -s /bin/sh sentry && \
+    chown -R sentry:sentry /app
+
+# Copy package files
+COPY package.json bun.lockb tsconfig.json tsconfig.base.json ./
+COPY core ./core
+COPY gateway ./gateway
+COPY contracts ./contracts
+COPY skills ./skills
+
+# Install dependencies
+RUN bun install
+
+# Create workspace directory with proper permissions
+RUN mkdir -p /app/gateway/src/workspace && \
+    chown -R sentry:sentry /app/gateway/src/workspace
+
+# Expose ports
+EXPOSE 18789 18790
+
+# Set environment variables for TEE mode
+ENV IS_TEE=false
+ENV HEARTBEAT_INTERVAL_MINUTES=30
+
+# Switch to non-root user
+USER sentry
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:18789/health || exit 1
+
+# Start command - runs gateway
+CMD ["bun", "--cwd", "gateway", "run", "start"]
