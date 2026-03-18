@@ -6,7 +6,7 @@
 # In production, you would use: phalanetwork/phala-puffer-alpine:latest
 FROM oven/bun:latest
 
-# Install SGX dependencies (for TEE attestation)
+# Install SGX dependencies (for TEE attestation) and log rotation
 RUN apk add --no-cache \
     curl \
     wget \
@@ -14,6 +14,7 @@ RUN apk add --no-cache \
     openssl \
     libcurl \
     jq \
+    logrotate \
     && rm -rf /var/cache/apk/*
 
 # Set working directory
@@ -36,6 +37,11 @@ RUN bun install
 # Create workspace directory with proper permissions
 RUN mkdir -p /app/gateway/src/workspace && \
     chown -R sentry:sentry /app/gateway/src/workspace
+
+# Configure log rotation (cap logs at 10MB)
+RUN echo "/app/logs/*.log {\n    daily\n    rotate 1\n    size 10M\n    compress\n    delaycompress\n    missingok\n    notifempty\n    create 0644 sentry sentry\n}" > /etc/logrotate.d/sentry && \
+    mkdir -p /app/logs && \
+    chown -R sentry:sentry /app/logs
 
 # Expose ports
 EXPOSE 18789 18790

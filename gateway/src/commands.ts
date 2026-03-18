@@ -811,7 +811,7 @@ const SentryVerifyIntegrityCommand: Command<SentryVerifyIntegrityInput, {
       if (!validated.ok) return validated;
 
       // Import dynamically to avoid circular deps
-      const { getSelfclawService } = await import("../auth/selfclaw");
+      const { getSelfclawService } = await import("./auth/selfclaw");
       const selfclawRes = getSelfclawService();
       if (!selfclawRes.ok) return err(selfclawRes.error);
 

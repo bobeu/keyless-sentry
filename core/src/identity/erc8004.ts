@@ -153,18 +153,24 @@ export class ERC8004IdentityService {
       
       // Step 1: Check if already registered
       const isRegisteredRes = await this.isRegistered(this.identityWalletAddress);
-      if (!isRegisteredRes.ok) return isRegisteredRes;
+      if (!isRegisteredRes.ok) {
+        return err(isRegisteredRes.error);
+      }
       
       if (isRegisteredRes.value) {
         // Already registered - get identity details
         const identityRes = await this.getIdentity(this.identityWalletAddress);
-        if (!identityRes.ok) return identityRes;
+        if (!identityRes.ok) {
+          return err(identityRes.error);
+        }
         
         console.log("[identity] Identity already registered:", identityRes.value);
         
+        // Convert null to undefined for the interface
+        const identity = identityRes.value;
         return ok({
           isRegistered: true,
-          identity: identityRes.value,
+          identity: identity ?? undefined,
           needsRegistration: false,
         });
       }
@@ -179,14 +185,7 @@ export class ERC8004IdentityService {
       );
       
       if (!registerRes.ok) {
-        return err(
-          new AppError({
-            code: "IDENTITY_ERROR",
-            message: "Failed to register identity on ERC-8004",
-            context: "core.identity.erc8004.checkAndRegister",
-            causeUnknown: registerRes.error,
-          }),
-        );
+        return err(registerRes.error);
       }
       
       console.log("[identity] Identity registered successfully. TX:", registerRes.value.txHash);

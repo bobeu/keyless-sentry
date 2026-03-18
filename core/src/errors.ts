@@ -10,6 +10,7 @@ export const AppErrorCodeSchema = z.enum([
   "NOT_FOUND",
   "DB_ERROR",
   "CONTRACT_ERROR",
+  "IDENTITY_ERROR",
 ]);
 
 export type AppErrorCode = z.infer<typeof AppErrorCodeSchema>;

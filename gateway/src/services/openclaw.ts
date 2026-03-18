@@ -200,7 +200,7 @@ export class OpenClawService {
   async startHeartbeat(
     onHeartbeat: (result: HeartbeatResult) => Promise<void>
   ): Promise<Result<void>> {
-    return safeSync("gateway.openclaw.startHeartbeat", () => {
+    return safeAsync("gateway.openclaw.startHeartbeat", async () => {
       const intervalMs = this.config.HEARTBEAT_INTERVAL_MINUTES * 60 * 1000;
       
       console.log(`[openclaw] Starting heartbeat loop (every ${this.config.HEARTBEAT_INTERVAL_MINUTES} minutes)`);
@@ -324,7 +324,8 @@ export class OpenClawService {
    */
   private extractIdentityHandle(content: string): string {
     const match = content.match(/\*\*Identity Handle:\*\*\s*(.+)/);
-    return match ? match[1].trim() : "unknown";
+    const matched = match?.[1];
+    return matched?.trim() ?? "Sentry-Vault";
   }
 
   /**
@@ -342,7 +343,8 @@ export class OpenClawService {
    */
   private extractVersion(content: string): string {
     const match = content.match(/(v\d+\.\d+\.\d+)/);
-    return match ? match[1] : "v0.4.0";
+    const matched = match?.[1];
+    return matched ?? "v0.4.0";
   }
 
   /**
@@ -381,4 +383,4 @@ export function getOpenClawService(): Result<OpenClawService> {
   });
 }
 
-export type { OpenClawConfig, HeartbeatResult };
+export type { OpenClawConfig };

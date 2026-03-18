@@ -15,6 +15,7 @@ import { SentryOrchestrator } from "@keyless-sentry/core";
 import { z } from "zod";
 import { handleTelegramMessage } from "./router";
 import { OpenClawService, getOpenClawService } from "./services/openclaw";
+import { initHeartbeat, startHeartbeat, type HeartbeatResult } from "./services/heartbeat";
 
 async function readLines(): Promise<Result<AsyncIterable<string>>> {
   return safeAsync("gateway.index.readLines", async () => {
@@ -158,35 +159,19 @@ async function main(): Promise<Result<void>> {
 
     const txWatcher = txWatcherRes.ok ? txWatcherRes.value : undefined;
 
-    // Initialize OpenClaw service (workspace, SOUL.md, heartbeat)
-    const openclawRes = getOpenClawService();
-    if (openclawRes.ok) {
-      const openclaw = openclawRes.value;
-      
-      // Initialize (load SOUL.md)
-      const initRes = await openclaw.initialize();
-      if (initRes.ok) {
-        console.log("[gateway] OpenClaw initialized:", initRes.value);
-      } else {
-        console.error("[gateway] OpenClaw initialization failed:", initRes.error.message);
-      }
-      
-      // Start heartbeat loop (30 minutes)
-      await openclaw.startHeartbeat(async (result) => {
-        console.log("[heartbeat]", JSON.stringify(result));
-        
-        // Log heartbeat results
-        const heartbeatLog = {
-          type: "HEARTBEAT",
-          timestamp: new Date().toISOString(),
-          registrySync: result.registrySync,
-          vaultSanitization: result.vaultSanitization,
-          liquidityWatch: result.liquidityWatch,
-          selfclawAudit: result.selfclawAudit,
-        };
-        console.log(JSON.stringify(heartbeatLog));
-      });
-    }
+    // Initialize heartbeat service
+    await initHeartbeat();
+    
+    // Start heartbeat loop (30 minutes)
+    startHeartbeat(async (result: HeartbeatResult) => {
+      console.log(JSON.stringify({
+        type: "HEARTBEAT",
+        timestamp: result.timestamp,
+        status: result.status,
+        vaultHealth: result.vaultHealth,
+        integrityCheck: result.integrityCheck,
+      }));
+    });
 
     const linesRes = await readLines();
     if (!linesRes.ok) return linesRes;

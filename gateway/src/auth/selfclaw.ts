@@ -173,6 +173,7 @@ export class SelfclawService {
       const codeHash = hash.digest("hex");
       
       console.log(`[selfclaw] Code integrity hash computed for ${totalFiles} files`);
+      console.log(`[selfclaw] Hash: ${codeHash.substring(0, 16)}...`);
       
       return ok({
         type: "code_integrity",
