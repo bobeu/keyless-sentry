@@ -17,5 +17,8 @@
   "devDependencies": {
     "@types/bun": "latest",
     "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "@keyless-collective/sdk": "../keyless-collective/packages/sdk"
   }
 }

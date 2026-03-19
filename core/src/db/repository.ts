@@ -397,11 +397,136 @@ export class AuditLogRepository {
   }
 }
 
+/**
+ * Sentry Identity Repository - stores the agent's ERC-8004 identity
+ */
+export class SentryIdentityRepository {
+  async create(inputUnknown: unknown): Promise<Result<{
+    id: string;
+    agentName: string;
+    identityAddress: string;
+    metadataURI: string;
+    a2aEndpoint: string;
+    chainId: number;
+    registryAddress: string;
+    txHash?: string;
+    registeredAt: Date;
+    lastVerifiedAt: Date;
+    isActive: boolean;
+  }>> {
+    return safeAsync("core.db.sentryIdentity.create", async () => {
+      const prisma = getPrismaClient();
+      const data = inputUnknown as any;
+      const identity = await prisma.sentryIdentity.create({
+        data: {
+          agentName: data.agentName,
+          identityAddress: data.identityAddress,
+          metadataURI: data.metadataURI,
+          a2aEndpoint: data.a2aEndpoint,
+          chainId: data.chainId,
+          registryAddress: data.registryAddress,
+          txHash: data.txHash,
+          isActive: true,
+        },
+      });
+      return ok(identity as any);
+    });
+  }
+
+  async findFirst(): Promise<Result<{
+    id: string;
+    agentName: string;
+    identityAddress: string;
+    metadataURI: string;
+    a2aEndpoint: string;
+    chainId: number;
+    registryAddress: string;
+    txHash?: string;
+    registeredAt: Date;
+    lastVerifiedAt: Date;
+    isActive: boolean;
+  } | null>> {
+    return safeAsync("core.db.sentryIdentity.findFirst", async () => {
+      const prisma = getPrismaClient();
+      const identity = await prisma.sentryIdentity.findFirst({
+        orderBy: { registeredAt: "desc" },
+      });
+      return ok(identity as any);
+    });
+  }
+
+  async updateLastVerified(): Promise<Result<void>> {
+    return safeAsync("core.db.sentryIdentity.updateLastVerified", async () => {
+      const prisma = getPrismaClient();
+      const identity = await prisma.sentryIdentity.findFirst({
+        orderBy: { registeredAt: "desc" },
+      });
+      if (identity) {
+        await prisma.sentryIdentity.update({
+          where: { id: identity.id },
+          data: { lastVerifiedAt: new Date() },
+        });
+      }
+      return ok(undefined);
+    });
+  }
+
+  async updateIdentity(inputUnknown: unknown): Promise<Result<{
+    id: string;
+    agentName: string;
+    identityAddress: string;
+    metadataURI: string;
+    a2aEndpoint: string;
+    chainId: number;
+    registryAddress: string;
+    txHash?: string;
+    registeredAt: Date;
+    lastVerifiedAt: Date;
+    isActive: boolean;
+  }>> {
+    return safeAsync("core.db.sentryIdentity.updateIdentity", async () => {
+      const prisma = getPrismaClient();
+      const data = inputUnknown as any;
+      
+      // Find existing identity
+      const existing = await prisma.sentryIdentity.findFirst({
+        orderBy: { registeredAt: "desc" },
+      });
+      
+      if (!existing) {
+        return err(
+          new AppError({
+            code: "NOT_FOUND",
+            message: "No identity found to update",
+            context: "core.db.sentryIdentity.updateIdentity",
+          }),
+        );
+      }
+
+      const updated = await prisma.sentryIdentity.update({
+        where: { id: existing.id },
+        data: {
+          agentName: data.agentName ?? existing.agentName,
+          identityAddress: data.identityAddress ?? existing.identityAddress,
+          metadataURI: data.metadataURI ?? existing.metadataURI,
+          a2aEndpoint: data.a2aEndpoint ?? existing.a2aEndpoint,
+          chainId: data.chainId ?? existing.chainId,
+          registryAddress: data.registryAddress ?? existing.registryAddress,
+          txHash: data.txHash ?? existing.txHash,
+          lastVerifiedAt: new Date(),
+        },
+      });
+      return ok(updated as any);
+    });
+  }
+}
+
 // Singleton instances for repositories
 let userRepo: UserRepository | null = null;
 let authRepo: AuthorizationRepository | null = null;
 let escrowRepo: TaskEscrowRepository | null = null;
 let auditLogRepo: AuditLogRepository | null = null;
+let sentryIdentityRepo: SentryIdentityRepository | null = null;
 
 export function getUserRepository(): UserRepository {
   if (!userRepo) userRepo = new UserRepository();
@@ -421,4 +546,9 @@ export function getTaskEscrowRepository(): TaskEscrowRepository {
 export function getAuditLogRepository(): AuditLogRepository {
   if (!auditLogRepo) auditLogRepo = new AuditLogRepository();
   return auditLogRepo;
+}
+
+export function getSentryIdentityRepository(): SentryIdentityRepository {
+  if (!sentryIdentityRepo) sentryIdentityRepo = new SentryIdentityRepository();
+  return sentryIdentityRepo;
 }

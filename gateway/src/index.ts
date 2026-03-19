@@ -12,10 +12,85 @@ import {
   type Result,
 } from "@keyless-sentry/core";
 import { SentryOrchestrator } from "@keyless-sentry/core";
+import { ERC8004IdentityService } from "@keyless-sentry/core";
 import { z } from "zod";
 import { handleTelegramMessage } from "./router";
-import { OpenClawService, getOpenClawService } from "./services/openclaw";
+import { getOpenClawService } from "./services/openclaw";
 import { initHeartbeat, startHeartbeat, type HeartbeatResult } from "./services/heartbeat";
+
+/**
+ * Initialize ERC-8004 Identity Service
+ * This runs on boot to:
+ * 1. Check if identity is registered on Celo
+ * 2. If not, mint new Identity NFT using PRIVATE_KEY
+ * 3. Auto-register for Synthesis hackathon
+ * 4. Store identity in database
+ */
+async function initIdentityService(): Promise<Result<void>> {
+  return safeAsync("gateway.initIdentityService", async () => {
+    console.log("[identity] Initializing ERC-8004 Identity Service...");
+    
+    // Check if PRIVATE_KEY is available
+    const privateKey = process.env.PRIVATE_KEY;
+    if (!privateKey) {
+      console.warn("[identity] PRIVATE_KEY not found - skipping ERC-8004 registration");
+      console.warn("[identity] Set PRIVATE_KEY in env to enable identity registration");
+      return ok(undefined);
+    }
+    
+    // Initialize identity service
+    const identityRes = ERC8004IdentityService.fromEnv();
+    if (!identityRes.ok) {
+      console.error("[identity] Failed to initialize identity service:", identityRes.error.message);
+      return identityRes;
+    }
+    
+    const identityService = identityRes.value;
+    
+    // Check and register identity (this auto-registers for Synthesis hackathon)
+    const checkRes = await identityService.checkAndRegister();
+    if (!checkRes.ok) {
+      console.error("[identity] Identity check/register failed:", checkRes.error.message);
+      return checkRes;
+    }
+    
+    console.log("[identity] Identity status:", {
+      isRegistered: checkRes.value.isRegistered,
+      needsRegistration: checkRes.value.needsRegistration,
+    });
+    
+    return ok(undefined);
+  });
+}
+
+/**
+ * Initialize OpenClaw Service
+ * This loads SOUL.md and sets up the workspace
+ */
+async function initOpenClaw(): Promise<Result<void>> {
+  return safeAsync("gateway.initOpenClaw", async () => {
+    console.log("[openclaw] Initializing OpenClaw service...");
+    
+    const openclawRes = getOpenClawService();
+    if (!openclawRes.ok) {
+      console.error("[openclaw] Failed to get OpenClaw service:", openclawRes.error.message);
+      return openclawRes;
+    }
+    
+    const openclaw = openclawRes.value;
+    const initRes = await openclaw.initialize();
+    if (!initRes.ok) {
+      console.error("[openclaw] Failed to initialize:", initRes.error.message);
+      return initRes;
+    }
+    
+    console.log("[openclaw] OpenClaw initialized successfully");
+    console.log(`[openclaw] Identity: ${initRes.value.identityHandle}`);
+    console.log(`[openclaw] Personality: ${initRes.value.personality}`);
+    
+    return ok(undefined);
+  });
+}
 
 async function readLines(): Promise<Result<AsyncIterable<string>>> {
   return safeAsync("gateway.index.readLines", async () => {
@@ -98,6 +173,18 @@ async function main(): Promise<Result<void>> {
       return ok(true);
     });
     if (!dotenvRes.ok) return dotenvRes;
+
+    // Initialize OpenClaw service (loads SOUL.md, sets up workspace)
+    const openclawInitRes = await initOpenClaw();
+    if (!openclawInitRes.ok) {
+      console.warn("[gateway] Warning: OpenClaw initialization failed, continuing anyway...");
+    }
+
+    // Initialize ERC-8004 Identity Service (auto-registers for Synthesis hackathon)
+    const identityInitRes = await initIdentityService();
+    if (!identityInitRes.ok) {
+      console.warn("[gateway] Warning: Identity service initialization failed, continuing anyway...");
+    }
 
     const orchRes = await SentryOrchestrator.createFromEnv();
     if (!orchRes.ok) return orchRes;

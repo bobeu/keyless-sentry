@@ -11,6 +11,12 @@ export * from "./registry/abi";
 export * from "./registry/registryClient";
 export * from "./registry/transactionWatcher";
 export * from "./registry/erc8004";
+// ERC-8004 Identity Service (for identity registration with PRIVATE_KEY)
+export {
+  ERC8004IdentityService,
+  SENTRY_IDENTITY_METADATA,
+  SENTRY_VERSION,
+} from "./identity/erc8004";
 export * from "./db/repository";
 export * from "./reasoning/personalityEngine";
 export * from "./reasoning/skillDiscoveryService";
@@ -20,4 +26,6 @@ export * from "./skills/escrow";
 export * from "./encryption";
 export * from "./jsonRpcHandler";
 export * from "./auth/selfclaw";
+export { registerForHackathonInternal } from "./jsonRpcHandler";
+export * from "./owner";
 

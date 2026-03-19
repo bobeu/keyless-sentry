@@ -1,217 +1,314 @@
-# Sentry — The Private Secure Vault
+# Keyless Sentry - Project Status Report
 
 ## Executive Summary
 
-Sentry is a Financial Orchestrator for AI agents built on the Keyless Collective SDK. It enables AI agents to execute transactions without holding private keys, using owner-signed authorizations stored in a secure PostgreSQL "Vault."
+This report provides a comprehensive comparison between the current implementation status and the expected version of the Keyless Sentry project. It identifies gaps, existing implementations, and provides a detailed action plan for completing missing features.
 
-## Version History
+**Generated:** 2026-03-19  
+**Project Version:** v0.4.0  
+**Analysis Mode:** Code vs Expected
 
-- **v0.4.0**: ERC-8004 Identity & Selfclaw Verification
-- **v0.3.0**: A2A Discovery Interface (JSON-RPC) + Transaction Watcher
-- **v0.2.0**: Postgres Vault with encryption
-- **v0.1.0**: Initial on-chain registry
+---
 
-## Architecture Overview
+## Part 1: Current Implementation Status
 
-### The Problem
-AI agents need to pay for things, but they shouldn't hold private keys. If an agent is compromised, the attacker could drain all funds.
+### 1.1 Core Infrastructure ✅
 
-### The Solution
-Sentry acts as a "Trusted Custodian of Intents." It:
-1. Collects owner signatures via WalletConnect deep-links
-2. Stores encrypted signatures in PostgreSQL (the "Vault")
-3. Verifies authorizations before allowing any transaction
-4. Applies personality-based rules (Guardian, Accountant, Strategist)
-5. Executes transactions using the Keyless Collective SDK
-6. Monitors transaction lifecycle until confirmation
-7. Exposes JSON-RPC API for Agent-to-Agent communication
+| Component | Status | File Location | Notes |
+|-----------|--------|---------------|-------|
+| AES-256-GCM Encryption | ✅ Implemented | `core/src/encryption.ts` | Full encryption/decryption with unique IV per operation |
+| Database Schema | ✅ Implemented | `core/prisma/schema.prisma` | Users, Authorizations, TaskEscrows, AuditLogs with proper indexing |
+| Prisma Repository | ✅ Implemented | `core/src/db/repository.ts` | Full CRUD operations with encryption integration |
+| Error Handling | ✅ Implemented | `core/src/errors.ts` | Custom AppError with code/message/context |
+| Result Type | ✅ Implemented | `core/src/result.ts` | Type-safe Result<T> for error handling |
 
-## Key Features
+### 1.2 JSON-RPC Gateway ✅
 
-### 1. Postgres Vault (v0.2.0)
-Signatures are encrypted using AES-256-GCM:
-- **Key**: `ENCRYPTION_KEY` environment variable (32 bytes)
-- **IV**: Random 16-byte IV per encryption
-- **Auth Tag**: Ensures ciphertext integrity
+| Method | Status | Implementation | Notes |
+|--------|--------|----------------|-------|
+| `sentry_request_payment` | ✅ Implemented | `jsonRpcHandler.ts:134-175` | Validates auth, checks maxSpend, logs to AuditLog |
+| `sentry_check_authorization` | ✅ Implemented | `jsonRpcHandler.ts:177-197` | Returns isActive, expiresAt, maxSpend |
+| `sentry_revoke_agent` | ✅ Implemented | `jsonRpcHandler.ts:199-217` | Gasless revocation via Postgres update |
+| `sentry_verify_integrity` | ✅ Implemented | `jsonRpcHandler.ts:231-262` | Returns attestation with TEE/build hash |
+| `sentry_register_hackathon` | ✅ Implemented | `jsonRpcHandler.ts` | Registers for Synthesis hackathon |
+| `getSkill` | ✅ Implemented | `jsonRpcHandler.ts` | Exposes SKILL.md content for agent discovery |
 
-### 2. Transaction Watcher (v0.3.0)
-Tracks transaction lifecycle:
-- Uses `publicClient.waitForTransactionReceipt()` from viem
-- Updates AuditLog status: PENDING → SUCCESS/FAILED
-- Notifies via stdout JSON when status changes
-- Tracks gas used for cost analysis
+### 1.3 Identity & Security ✅
 
-### 3. A2A Discovery Interface (v0.3.0)
-JSON-RPC 2.0 API for agent communication:
+| Component | Status | File Location | Notes |
+|-----------|--------|---------------|-------|
+| ERC-8004 Identity Service | ✅ Implemented | `core/src/identity/erc8004.ts` | Full check-and-register flow |
+| Selfclaw Verification | ✅ Implemented | `core/src/auth/selfclaw.ts` | TEE + build hash modes |
+| Transaction Watcher | ✅ Implemented | `core/src/registry/transactionWatcher.ts` | Monitors tx confirmations |
+| Heartbeat Service | ✅ Implemented | `gateway/src/services/heartbeat.ts` | 30-minute autonomous checks |
 
-**Methods:**
-- `sentry_request_payment` - Request payment from user wallet
-- `sentry_check_authorization` - Check agent permissions
-- `sentry_revoke_agent` - Instant, gasless revocation
-- `sentry_verify_integrity` - Verify agent integrity (v0.4.0)
+### 1.4 Skills & Capabilities ✅
 
-**Example Request:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "sentry_request_payment",
-  "params": {
-    "fromUserHash": "keccak256('telegram:12345')",
-    "agentId": "data-api-agent",
-    "to": "0x...",
-    "amount": "1000000000000000000",
-    "token": "cUSD"
-  },
-  "id": 1
+| Skill | Status | File Location | Notes |
+|-------|--------|---------------|-------|
+| Sentry Seal | ✅ Implemented | `core/src/skills/seal.ts` | Signs transaction receipts |
+| Flash Escrow | ✅ Implemented | `core/src/skills/escrow.ts` | Reserve/release funds |
+| Invoice Generation | ✅ Implemented | `core/src/skills/invoice.ts` | Adaptive invoicing |
+| Skill Discovery | ✅ Implemented | `core/src/reasoning/skillDiscoveryService.ts` | Loads SKILL.md from path |
+
+### 1.5 Gateway & Commands ✅
+
+| Command | Status | Notes |
+|---------|--------|-------|
+| `/health` | ✅ Implemented | Returns orchestrator health, DB status, integrity score |
+| `/start` | ✅ Implemented | Onboarding with personality selection |
+| `/create-wallet` | ✅ Implemented | WalletConnect flow initiation |
+| `/authorize-agent` | ✅ Implemented | Agent authorization with maxSpend/duration |
+| `/revoke` | ✅ Implemented | Gasless agent revocation |
+| `/get-invoice` | ✅ Implemented | Signed invoice blob generation |
+| `/reserve-task` | ✅ Implemented | Escrow fund reservation |
+| `/complete-task` | ✅ Implemented | Escrow release |
+| `/history` | ✅ Implemented | Audit log retrieval |
+
+### 1.6 OpenClaw Integration ✅
+
+| Component | Status | File Location | Notes |
+|-----------|--------|---------------|-------|
+| OpenClaw Service | ✅ Implemented | `gateway/src/services/openclaw.ts` | SOUL.md + MEMORY.md management |
+| Heartbeat Operations | ✅ Implemented | `openclaw.ts:239-268` | Registry sync, vault sanitization |
+| Telegram Interface | ❌ Partial | - | Input parsing supports Telegram format but no bot handler |
+
+---
+
+## Part 2: Expected Features Comparison
+
+### 2.1 Required Features
+
+| Requirement | Current Status | Priority | Gap Description |
+|-------------|----------------|----------|-----------------|
+| **Telegram Interface** | ⚠️ Partial | P0 | Input parsing supports Telegram but no dedicated bot handler |
+| **getSkill() Function** | ✅ Implemented | P0 | JSON-RPC method exposes SKILL.md - Also implemented in @keyless-collective/sdk |
+| **sentry_register_hackathon** | ✅ Implemented | P1 | JSON-RPC method for Synthesis hackathon registration |
+| **Transaction Execution** | ⚠️ Mocked | P0 | Returns mock txHash, doesn't actually execute |
+| **AES-256-GCM Auth Storage** | ✅ Implemented | - | Fully implemented |
+| **ERC-8004 Manifest** | ✅ Implemented | - | Identity metadata includes capabilities |
+| **Sentry Seal** | ✅ Implemented | - | Signs transaction receipts |
+| **Flash Escrow** | ✅ Implemented | - | Reserve/release with Task Complete signal |
+
+### 2.2 JSON-RPC Interface (Synthesis Skill Standard)
+
+**Current Methods:**
+```typescript
+- sentry_request_payment     // ✅
+- sentry_check_authorization // ✅
+- sentry_revoke_agent        // ✅
+- sentry_verify_integrity    // ✅
+- sentry_register_hackathon  // ✅ Added
+- getSkill                   // ✅ Added
+```
+
+**All Methods Implemented:**
+```typescript
+- sentry_request_payment     // ✅
+- sentry_check_authorization // ✅
+- sentry_revoke_agent        // ✅
+- sentry_verify_integrity    // ✅
+- sentry_register_hackathon  // ✅
+- getSkill                   // ✅
+```
+
+---
+
+## Part 3: Agent-to-Agent (A2A) Analysis
+
+### 3.1 Plugin Architecture
+
+**Current State:**
+- Agents can interact via JSON-RPC 2.0 gateway
+- Authorization checking is enforced
+- Permission denied returns proper error codes
+
+**Required Enhancements:**
+1. Plugin registration system for other agents to add Sentry
+2. Manifest endpoint for ERC-8004 discovery
+3. Skill exposition via `getSkill()` method
+
+### 3.2 Interaction Method Analysis
+
+**Option 1: JSON-RPC 2.0 (Current)**
+- ✅ Well-defined standard
+- ✅ Request/response pattern
+- ✅ Error handling via error codes
+- ⚠️ Requires HTTP/WebSocket transport
+
+**Option 2: HTTP REST**
+- ✅ Simpler for some integrations
+- ❌ Less formal than JSON-RPC for agent communication
+- ⚠️ Would require additional routing logic
+
+**Option 3: WebSocket**
+- ✅ Real-time bidirectional communication
+- ⚠️ More complex to implement
+- ⚠️ Not needed for current use case
+
+**Recommendation:** **JSON-RPC 2.0** is the best choice because:
+1. It's already implemented and working
+2. Follows Synthesis Skill Standard
+3. Provides structured error handling for permission failures
+4. Easy to extend with new methods
+5. Works well with stdin/stdout for headless operation
+
+---
+
+## Part 4: Deprecations & Legacy Tracking
+
+### 4.1 Features to Deprecate
+
+| Feature | Status | Deprecation Note | Reason |
+|---------|--------|------------------|--------|
+| Mock Transaction Execution | Active | Mark as DEPRECATED | Need real KeylessClient integration |
+| Hardcoded AUTH key in Seal | Active | Mark as DEPRECATED | Should use Keyless SDK |
+
+### 4.2 Missing Implementations to Track
+
+| Missing Feature | File to Create/Modify | Status |
+|----------------|----------------------|--------|
+| Telegram Bot Handler | `gateway/src/services/telegram.ts` | Not Started |
+| getSkill JSON-RPC | `core/src/jsonRpcHandler.ts` | Not Started |
+| sentry_register_hackathon | `core/src/jsonRpcHandler.ts` | Not Started |
+| Real Transaction Execution | `core/src/jsonRpcHandler.ts` | Not Started |
+| Agent Plugin System | `core/src/plugins/` | Not Started |
+
+---
+
+## Part 5: Action Plan
+
+### Phase 1: Core JSON-RPC Enhancements (Priority: P0)
+
+#### Task 1.1: Add getSkill() Method
+**File:** `core/src/jsonRpcHandler.ts`
+**Description:** Expose SKILL.md content via JSON-RPC
+```typescript
+// Add to handler switch:
+case "getSkill":
+  return await this.handleGetSkill(req.params, req.id);
+
+// New method:
+private async handleGetSkill(params, id) {
+  // Load skills/sentry/SKILL.md and return content
 }
 ```
 
-**PERMISSION_DENIED Error:**
-```json
-{
-  "jsonrpc": "2.0",
-  "error": {
-    "code": -32001,
-    "message": "PERMISSION_DENIED",
-    "data": { "reason": "No active authorization for agent 'X'" }
-  },
-  "id": 1
-}
+#### Task 1.2: Add sentry_register_hackathon
+**File:** `core/src/jsonRpcHandler.ts`
+**Description:** Register agent for Synthesis hackathon
+```typescript
+// Add to handler switch:
+case "sentry_register_hackathon":
+  return await this.handleRegisterHackathon(req.params, req.id);
 ```
 
-### 4. ERC-8004 Identity Registry (v0.4.0)
-Registers Sentry as an identity on Celo using ERC-8004:
-- **Contract**: `ERC8004_REGISTRY_ADDRESS` on Celo
-- **Metadata**: Includes Sentry version (v0.4.0) and A2A JSON-RPC endpoint
-- **Registration**: Uses KeylessClient to sign the registration
-
-### 5. Selfclaw Verification (v0.4.0)
-Integrity verification for auditors:
-
-**TEE Mode** (`IS_TEE=true`):
-- Fetches Remote Attestation Quote from Intel SGX/ARM TrustZone/AMD SEV
-- Uses `TEE_ATTESTATION_URL` for attestation service
-
-**Non-TEE Mode** (default):
-- Generates SHA-256 hash of the `dist/` folder
-- Provides build integrity verification
-
-**Verify Integrity Request:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "sentry_verify_integrity",
-  "params": {
-    "includeAttestation": true
-  },
-  "id": 1
-}
+#### Task 1.3: Implement Real Transaction Execution
+**File:** `core/src/jsonRpcHandler.ts`
+**Description:** Use KeylessClient to execute actual transactions
+```typescript
+// In handleRequestPayment:
+// 1. Get decrypted signature from repository
+// 2. Execute transaction via KeylessClient
+// 3. Return real txHash
 ```
 
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "result": {
-    "isTEE": false,
-    "attestationType": "build_hash",
-    "value": "a1b2c3d4...",
-    "version": "v0.4.0",
-    "timestamp": 1710748800000,
-    "buildId": "build-a1b2c3d4"
-  },
-  "id": 1
-}
+### Phase 2: Telegram Integration (Priority: P0)
+
+#### Task 2.1: Create Telegram Bot Handler
+**File:** `gateway/src/services/telegram.ts`
+**Description:** Handle Telegram messages for multi-user support
+
+#### Task 2.2: Add Authorization Commands
+**File:** `gateway/src/commands.ts`
+**Description:** Add `/authorize` and `/revoke` commands for Telegram owners
+
+### Phase 3: Plugin Architecture (Priority: P1)
+
+#### Task 3.1: Create Plugin Interface
+**File:** `core/src/plugins/interface.ts`
+**Description:** Define plugin registration and lifecycle
+
+#### Task 3.2: Implement Plugin Registry
+**File:** `core/src/plugins/registry.ts`
+**Description:** Allow other agents to register as plugins
+
+---
+
+## Part 6: Security Considerations
+
+### 6.1 Encryption Status
+- **AES-256-GCM:** ✅ Fully implemented
+- **Unique IV:** ✅ Each encryption uses random 16-byte IV
+- **Auth Tag:** ✅ 16-byte authentication tag
+- **Key Management:** ✅ Environment-based (ENCRYPTION_KEY)
+
+### 6.2 Authorization Flow
+1. Owner signs authorization via WalletConnect
+2. Signature encrypted with AES-256-GCM
+3. Stored in Postgres with isActive flag
+4. On agent request: decrypt, verify, execute
+5. Instant revocation: set isActive=false (gasless)
+
+---
+
+## Appendix A: File Structure Reference
+
+```
+keyless-sentry/
+├── core/
+│   ├── src/
+│   │   ├── encryption.ts          # ✅ AES-256-GCM
+│   │   ├── jsonRpcHandler.ts      # ⚠️ Needs enhancement
+│   │   ├── db/repository.ts       # ✅ With encryption
+│   │   ├── identity/erc8004.ts    # ✅ Full implementation
+│   │   ├── auth/selfclaw.ts       # ✅ TEE + build hash
+│   │   ├── skills/
+│   │   │   ├── seal.ts            # ✅
+│   │   │   ├── escrow.ts          # ✅
+│   │   │   └── invoice.ts         # ✅
+│   │   └── reasoning/
+│   │       └── skillDiscoveryService.ts  # ✅
+│   └── prisma/schema.prisma       # ✅
+├── gateway/
+│   └── src/
+│       ├── commands.ts             # ✅
+│       ├── services/
+│       │   ├── openclaw.ts         # ✅
+│       │   ├── heartbeat.ts        # ✅
+│       │   └── telegram.ts         # ❌ Needs creation
+│       └── index.ts                # ✅
+├── skills/
+│   ├── sentry/SKILL.md            # ✅
+│   └── sdk/SKILL.md               # ✅
+└── contracts/
+    └── SentryRegistry.sol         # ✅
 ```
 
-## Deployment
+---
 
-### Docker Compose
-```yaml
-services:
-  postgres:
-    image: postgres:alpine
-    mem_limit: 256mb
-  
-  sentry-gateway:
-    mem_limit: 512mb
-    environment:
-      - DATABASE_URL=postgresql://...@postgres:5432/sentry
-      - ENCRYPTION_KEY=...
-```
+## Appendix B: JSON-RPC Method Summary
 
-### Health Check
-```bash
-curl -X POST http://localhost:18789/health
-```
+| Method | Description | Status |
+|--------|-------------|--------|
+| `sentry_request_payment` | Request payment from authorized agent | ✅ |
+| `sentry_check_authorization` | Check agent authorization status | ✅ |
+| `sentry_revoke_agent` | Revoke agent authorization | ✅ |
+| `sentry_verify_integrity` | Get code integrity attestation | ✅ |
+| `sentry_register_hackathon` | Register for hackathon event | ✅ |
+| `getSkill` | Get agent skill definition | ✅ |
 
-Response:
-```json
-{
-  "orchestrator": "healthy",
-  "dbStatus": "connected",
-  "integrityScore": {
-    "successRate": 95,
-    "total": 100,
-    "successful": 95,
-    "failed": 5
-  },
-  "timestamp": "2026-03-18T..."
-}
-```
+---
 
-## Database Schema
+## Appendix C: Recommended Next Steps
 
-### Users
-```prisma
-model User {
-  hashedId      String     // keccak256(platform:id)
-  eoaAddress    String     // Owner's EOA
-  walletAddress String?    // Deployed keyless wallet
-  personality   Personality
-}
-```
+1. **Immediate:** Add `getSkill()` and `sentry_register_hackathon` to JSON-RPC handler
+2. **Immediate:** Replace mock transaction execution with real KeylessClient calls
+3. **Short-term:** Implement Telegram bot handler for multi-user support
+4. **Medium-term:** Create plugin system for agent registration
+5. **Long-term:** Add WebSocket support for real-time A2A communication
 
-### Authorizations (The Vault)
-```prisma
-model Authorization {
-  id          String   @id @default(uuid())
-  userHashedId String
-  agentId     String
-  signature   String   // Encrypted hex (AES-256-GCM)
-  maxSpend    String   // Wei
-  expiresAt   Int      // Unix timestamp
-  isActive    Boolean  @default(true)
-}
-```
+---
 
-### Audit Logs
-```prisma
-model AuditLog {
-  id          String        @id @default(uuid())
-  userHashedId String
-  action      String
-  txHash      String?
-  nonce       String?
-  status      PENDING | SUCCESS | FAILED
-  gasUsed     String?
-  timestamp   DateTime
-  details     Json?
-}
-```
-
-## Security Model
-
-- **Sentry AUTH Key**: Used only for service-level operations (on-chain registry)
-- **Owner Signatures**: All financial actions use signatures from Postgres "Vault"
-- **Double-Spend Prevention**: AuditLog tracks nonces
-- **Instant Revocation**: Gasless Postgres update (no on-chain wait)
-- **Transaction Watching**: Ensures funds don't get lost in reverts
-
-## Future Enhancements
-
-1. **Multi-sig Support**: Multiple owners required for high-value transactions
-2. **Time-locked Vaults**: Funds unlock after cooldown period
-3. **Rate Limiting**: Max transactions per hour/day
-4. **Hardware Security Module**: Store encryption key in HSM
-5. **ZKP Verification**: Prove authorization without revealing details
+*This report was generated as part of the Sentry vs Expected Version comparison and implementation planning.*
+ld 

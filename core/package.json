@@ -16,6 +16,7 @@
     "@keyless-collective/sdk": "^0.0.2",
     "@prisma/adapter-pg": "^7.4.0",
     "@prisma/client": "^7.4.0",
+    "@prisma/client-runtime-utils": "^7.5.0",
     "@walletconnect/sign-client": "^2.23.8",
     "@walletconnect/types": "^2.23.8",
     "@walletconnect/utils": "^2.23.8",

@@ -92,3 +92,23 @@ model AuditLog {
   @@index([status])
   @@map("audit_logs")
 }
+
+/**
+ * Sentry Identity - Stores the agent's ERC-8004 identity
+ * This is a singleton record for the Sentry agent itself
+ */
+model SentryIdentity {
+  id                    String   @id @default(uuid())
+  agentName             String
+  identityAddress       String   // ERC-8004 identity wallet address
+  metadataURI           String   // IPFS or data URI with agent capabilities
+  a2aEndpoint           String   // Agent-to-Agent endpoint
+  chainId               Int      // Chain where identity is registered
+  registryAddress       String   // ERC-8004 registry contract address
+  txHash               String?   // Registration transaction hash
+  registeredAt          DateTime @default(now())
+  lastVerifiedAt        DateTime @default(now())
+  isActive              Boolean  @default(true)
+
+  @@map("sentry_identity")
+}

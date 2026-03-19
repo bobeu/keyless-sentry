@@ -2,8 +2,12 @@ import { z } from "zod";
 import { isAddress, type Address } from "viem";
 import { AppError } from "./errors";
 import { err, ok, type Result } from "./result";
-import { getAuthorizationRepository, getAuditLogRepository } from "./db/repository";
+import { safeAsync } from "./validation";
+import { getAuthorizationRepository, getAuditLogRepository, getSentryIdentityRepository } from "./db/repository";
 import { getSelfclawVerifier } from "./auth/selfclaw";
+import { getOwnerVerifier } from "./owner";
+import { readFile } from "fs/promises";
+import { join } from "path";
 
 export interface JsonRpcRequest {
   jsonrpc: "2.0";
@@ -70,6 +74,74 @@ const VerifyIntegrityParamsSchema = z
   })
   .strict();
 
+const GetSkillParamsSchema = z
+  .object({
+    skillId: z.string().optional().default("sentry"),
+  })
+  .strict();
+
+const RegisterHackathonParamsSchema = z
+  .object({
+    hackathonId: z.string().min(1),
+    teamName: z.string().min(1),
+    projectDescription: z.string().optional(),
+  })
+  .strict();
+
+const GetIdentityParamsSchema = z
+  .object({})
+  .strict();
+
+const UpdateIdentityParamsSchema = z
+  .object({
+    callerTelegramId: z.string().min(1),
+    agentName: z.string().optional(),
+    identityAddress: z.string().optional(),
+    metadataURI: z.string().optional(),
+    a2aEndpoint: z.string().optional(),
+  })
+  .strict();
+
+/**
+ * INTERNAL: Register for Synthesis hackathon
+ * Called automatically when ERC-8004 identity is registered on boot
+ * Exported for use by the identity service
+ */
+export async function registerForHackathonInternal(
+  hackathonId: string,
+  teamName: string,
+  projectDescription?: string,
+): Promise<Result<{
+  success: boolean;
+  hackathonId: string;
+  teamName: string;
+  registeredAt: string;
+  message: string;
+}>> {
+  return safeAsync("core.jsonRpc.registerForHackathonInternal", async () => {
+    const auditRepo = getAuditLogRepository();
+    await auditRepo.create({
+      userHashedId: "system",
+      action: "HACKATHON_REGISTRATION",
+      status: "SUCCESS",
+      details: {
+        hackathonId,
+        teamName,
+        projectDescription,
+        registeredAt: new Date().toISOString(),
+      },
+    });
+
+    return ok({
+      success: true,
+      hackathonId,
+      teamName,
+      registeredAt: new Date().toISOString(),
+      message: `Successfully registered for ${hackathonId}`,
+    });
+  });
+}
+
 export class JsonRpcHandler {
   async handleRequest(request: unknown): Promise<JsonRpcResponse | JsonRpcErrorResponse> {
     const parseResult = this.parseRequest(request);
@@ -93,11 +165,19 @@ export class JsonRpcHandler {
         return await this.handleRevokeAgent(req.params, req.id);
       case "sentry_verify_integrity":
         return await this.handleVerifyIntegrity(req.params, req.id);
+      case "getSkill":
+        return await this.handleGetSkill(req.params, req.id);
+      case "sentry_register_hackathon":
+        return await this.handleRegisterHackathon(req.params, req.id);
+      case "sentry_get_identity":
+        return await this.handleGetIdentity(req.params, req.id);
+      case "sentry_update_identity":
+        return await this.handleUpdateIdentity(req.params, req.id);
       default:
         return this.errorResponse(
           JsonRpcErrorCode.METHOD_NOT_FOUND,
           `Method '${req.method}' not found`,
-          { availableMethods: ["sentry_request_payment", "sentry_check_authorization", "sentry_revoke_agent", "sentry_verify_integrity"] },
+          { availableMethods: ["sentry_request_payment", "sentry_check_authorization", "sentry_revoke_agent", "sentry_verify_integrity", "getSkill", "sentry_register_hackathon"] },
           req.id,
         );
     }
@@ -259,5 +339,249 @@ export class JsonRpcHandler {
       },
       id,
     };
+  }
+
+  /**
+   * Handle getSkill method - exposes SKILL.md content for agent discovery
+   * Other agents can call this to understand Sentry's capabilities
+   */
+  private async handleGetSkill(params: unknown, id: string | number): Promise<JsonRpcResponse | JsonRpcErrorResponse> {
+    const parsed = GetSkillParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      return this.errorResponse(JsonRpcErrorCode.INVALID_REQUEST, "Invalid params", { issues: parsed.error.issues }, id);
+    }
+
+    const p = parsed.data;
+    const skillId = p.skillId;
+
+    // Map skillId to file path
+    const skillPaths: Record<string, string> = {
+      sentry: "./skills/sentry/SKILL.md",
+      sdk: "./skills/sdk/SKILL.md",
+    };
+
+    const skillPath = skillPaths[skillId];
+    if (!skillPath) {
+      return this.errorResponse(
+        JsonRpcErrorCode.INVALID_REQUEST,
+        "Unknown skill ID",
+        { availableSkills: Object.keys(skillPaths) },
+        id
+      );
+    }
+
+    try {
+      // For SDK skill, provide structured skill info with note about SDK
+      // The SDK's getSkill() method is available in @keyless-collective/sdk
+      // Agents can use it directly: await sdkClient.getSkill()
+      if (skillId === "sdk") {
+        return {
+          jsonrpc: "2.0",
+          result: {
+            skillId,
+            content: JSON.stringify({
+              id: "keyless-sdk",
+              name: "Keyless Collective SDK",
+              description: "SDK for keyless autonomous payments. Use @keyless-collective/sdk package.",
+              usage: "import { KeylessClient } from '@keyless-collective/sdk'; const client = new KeylessClient({...}); await client.getSkill();",
+              note: "Call getSkill() directly from the SDK for full skill definition"
+            }, null, 2),
+            loadedAt: new Date().toISOString(),
+            source: "sentry-manifest",
+          },
+          id,
+        };
+      }
+
+      const content = await readFile(skillPath, "utf-8");
+      return {
+        jsonrpc: "2.0",
+        result: {
+          skillId,
+          content,
+          loadedAt: new Date().toISOString(),
+        },
+        id,
+      };
+    } catch (causeUnknown) {
+      return this.errorResponse(
+        JsonRpcErrorCode.INTERNAL_ERROR,
+        "Failed to load skill",
+        { skillId, cause: String(causeUnknown) },
+        id
+      );
+    }
+  }
+
+  /**
+   * Handle sentry_register_hackathon method
+   * Registers the Sentry agent for a Synthesis hackathon event
+   */
+  private async handleRegisterHackathon(params: unknown, id: string | number): Promise<JsonRpcResponse | JsonRpcErrorResponse> {
+    const parsed = RegisterHackathonParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      return this.errorResponse(JsonRpcErrorCode.INVALID_REQUEST, "Invalid params", { issues: parsed.error.issues }, id);
+    }
+
+    const p = parsed.data;
+
+    // Log the hackathon registration
+    const auditRepo = getAuditLogRepository();
+    await auditRepo.create({
+      userHashedId: "system",
+      action: "HACKATHON_REGISTRATION",
+      status: "SUCCESS",
+      details: {
+        hackathonId: p.hackathonId,
+        teamName: p.teamName,
+        projectDescription: p.projectDescription,
+        registeredAt: new Date().toISOString(),
+      },
+    });
+
+    return {
+      jsonrpc: "2.0",
+      result: {
+        success: true,
+        hackathonId: p.hackathonId,
+        teamName: p.teamName,
+        registeredAt: new Date().toISOString(),
+        message: `Successfully registered for ${p.hackathonId}`,
+      },
+      id,
+    };
+  }
+
+  /**
+   * Handle sentry_get_identity method
+   * Returns Sentry's stored ERC-8004 identity from the database
+   */
+  private async handleGetIdentity(params: unknown, id: string | number): Promise<JsonRpcResponse | JsonRpcErrorResponse> {
+    const parsed = GetIdentityParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      return this.errorResponse(JsonRpcErrorCode.INVALID_REQUEST, "Invalid params", { issues: parsed.error.issues }, id);
+    }
+
+    try {
+      const identityRepo = getSentryIdentityRepository();
+      const identityRes = await identityRepo.findFirst();
+
+      if (!identityRes.ok) {
+        return this.errorResponse(JsonRpcErrorCode.INTERNAL_ERROR, "Failed to retrieve identity", { cause: identityRes.error.message }, id);
+      }
+
+      const identity = identityRes.value;
+      if (!identity) {
+        return {
+          jsonrpc: "2.0",
+          result: {
+            isRegistered: false,
+            message: "Identity not registered yet",
+          },
+          id,
+        };
+      }
+
+      return {
+        jsonrpc: "2.0",
+        result: {
+          isRegistered: true,
+          agentName: identity.agentName,
+          identityAddress: identity.identityAddress,
+          metadataURI: identity.metadataURI,
+          a2aEndpoint: identity.a2aEndpoint,
+          chainId: identity.chainId,
+          registryAddress: identity.registryAddress,
+          registeredAt: identity.registeredAt.toISOString(),
+          lastVerifiedAt: identity.lastVerifiedAt.toISOString(),
+        },
+        id,
+      };
+    } catch (causeUnknown) {
+      return this.errorResponse(JsonRpcErrorCode.INTERNAL_ERROR, "Failed to retrieve identity", { cause: String(causeUnknown) }, id);
+    }
+  }
+
+  /**
+   * Handle sentry_update_identity method
+   * Updates Sentry's identity - only callable by the owner
+   */
+  private async handleUpdateIdentity(params: unknown, id: string | number): Promise<JsonRpcResponse | JsonRpcErrorResponse> {
+    const parsed = UpdateIdentityParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      return this.errorResponse(JsonRpcErrorCode.INVALID_REQUEST, "Invalid params", { issues: parsed.error.issues }, id);
+    }
+
+    const p = parsed.data;
+
+    // Verify caller is the owner
+    const ownerVerifier = getOwnerVerifier();
+    if (!ownerVerifier.ok) {
+      return this.errorResponse(
+        JsonRpcErrorCode.INTERNAL_ERROR,
+        "Owner verification not configured",
+        { cause: ownerVerifier.error.message },
+        id
+      );
+    }
+
+    const verification = ownerVerifier.value.verify(p.callerTelegramId);
+    if (!verification.ok) {
+      return this.errorResponse(
+        JsonRpcErrorCode.INTERNAL_ERROR,
+        "Failed to verify owner",
+        { cause: verification.error.message },
+        id
+      );
+    }
+
+    if (!verification.value.isOwner) {
+      return this.errorResponse(
+        JsonRpcErrorCode.PERMISSION_DENIED,
+        "PERMISSION_DENIED",
+        { reason: "Only the Sentry owner can update the identity", callerTelegramId: p.callerTelegramId },
+        id
+      );
+    }
+
+    try {
+      const identityRepo = getSentryIdentityRepository();
+      const updateRes = await identityRepo.updateIdentity({
+        agentName: p.agentName,
+        identityAddress: p.identityAddress,
+        metadataURI: p.metadataURI,
+        a2aEndpoint: p.a2aEndpoint,
+      });
+
+      if (!updateRes.ok) {
+        return this.errorResponse(
+          JsonRpcErrorCode.INTERNAL_ERROR,
+          "Failed to update identity",
+          { cause: updateRes.error.message },
+          id
+        );
+      }
+
+      const identity = updateRes.value;
+      return {
+        jsonrpc: "2.0",
+        result: {
+          success: true,
+          message: "Identity updated successfully",
+          agentName: identity.agentName,
+          identityAddress: identity.identityAddress,
+          a2aEndpoint: identity.a2aEndpoint,
+          lastVerifiedAt: identity.lastVerifiedAt.toISOString(),
+        },
+        id,
+      };
+    } catch (causeUnknown) {
+      return this.errorResponse(
+        JsonRpcErrorCode.INTERNAL_ERROR,
+        "Failed to update identity",
+        { cause: String(causeUnknown) },
+        id
+      );
+    }
   }
 }

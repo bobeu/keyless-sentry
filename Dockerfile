@@ -5,7 +5,8 @@ WORKDIR /app
 COPY package.json bun.lockb tsconfig.json tsconfig.base.json ./
 COPY core ./core
 COPY gateway ./gateway
-COPY contracts ./contracts
+# DEPRECATED: contracts are not connected to Sentry runtime - using database-based registry
+# COPY contracts ./contracts
 COPY skills ./skills
 
 RUN bun install

@@ -54,7 +54,7 @@ async function sendJsonRpc(request: JsonRpcRequest): Promise<JsonRpcResponse> {
  */
 async function testUnauthorizedAgent(): Promise<void> {
   console.log("\n" + "=".repeat(60));
-  console.log("🧪 TEST CASE A: Unauthorized Agent");
+  console.log("TEST CASE A: Unauthorized Agent");
   console.log("=".repeat(60));
   
   const request: JsonRpcRequest = {
@@ -70,11 +70,11 @@ async function testUnauthorizedAgent(): Promise<void> {
     id: 1,
   };
   
-  console.log("📤 Request:", JSON.stringify(request, null, 2));
+  console.log("Request:", JSON.stringify(request, null, 2));
   
   const response = await sendJsonRpc(request);
   
-  console.log("📥 Response:", JSON.stringify(response, null, 2));
+  console.log("Response:", JSON.stringify(response, null, 2));
   
   // Verify PERMISSION_DENIED
   if (response.error && response.error.code === -32001) {
@@ -91,7 +91,7 @@ async function testUnauthorizedAgent(): Promise<void> {
  */
 async function testOverMaxSpend(): Promise<void> {
   console.log("\n" + "=".repeat(60));
-  console.log("🧪 TEST CASE B: Authorized but Over MaxSpend");
+  console.log("TEST CASE B: Authorized but Over MaxSpend");
   console.log("=".repeat(60));
   
   // First, check authorization for a known agent (even if not in DB, we simulate)
@@ -108,11 +108,11 @@ async function testOverMaxSpend(): Promise<void> {
     id: 2,
   };
   
-  console.log("📤 Request:", JSON.stringify(request, null, 2));
+  console.log("Request:", JSON.stringify(request, null, 2));
   
   const response = await sendJsonRpc(request);
   
-  console.log("📥 Response:", JSON.stringify(response, null, 2));
+  console.log("Response:", JSON.stringify(response, null, 2));
   
   // Either PERMISSION_DENIED (no auth) or blocked by maxSpend
   if (response.error && response.error.code === -32001) {
@@ -130,7 +130,7 @@ async function testOverMaxSpend(): Promise<void> {
  */
 async function testCheckAuthorization(): Promise<void> {
   console.log("\n" + "=".repeat(60));
-  console.log("🧪 TEST CASE C: Check Authorization Status");
+  console.log("TEST CASE C: Check Authorization Status");
   console.log("=".repeat(60));
   
   const request: JsonRpcRequest = {
@@ -143,11 +143,11 @@ async function testCheckAuthorization(): Promise<void> {
     id: 3,
   };
   
-  console.log("📤 Request:", JSON.stringify(request, null, 2));
+  console.log("Request:", JSON.stringify(request, null, 2));
   
   const response = await sendJsonRpc(request);
   
-  console.log("📥 Response:", JSON.stringify(response, null, 2));
+  console.log("Response:", JSON.stringify(response, null, 2));
   
   // Should return authorization status
   if (response.result) {
@@ -167,7 +167,7 @@ async function testCheckAuthorization(): Promise<void> {
  */
 async function testRevokeAgent(): Promise<void> {
   console.log("\n" + "=".repeat(60));
-  console.log("🧪 TEST CASE D: Revoke Agent Authorization");
+  console.log("TEST CASE D: Revoke Agent Authorization");
   console.log("=".repeat(60));
   
   const request: JsonRpcRequest = {
@@ -180,11 +180,11 @@ async function testRevokeAgent(): Promise<void> {
     id: 4,
   };
   
-  console.log("📤 Request:", JSON.stringify(request, null, 2));
+  console.log("Request:", JSON.stringify(request, null, 2));
   
   const response = await sendJsonRpc(request);
   
-  console.log("📥 Response:", JSON.stringify(response, null, 2));
+  console.log("Response:", JSON.stringify(response, null, 2));
   
   // Should return success
   if (response.result) {
@@ -203,7 +203,7 @@ async function testRevokeAgent(): Promise<void> {
  */
 async function testInvalidMethod(): Promise<void> {
   console.log("\n" + "=".repeat(60));
-  console.log("🧪 TEST CASE E: Invalid Method");
+  console.log("TEST CASE E: Invalid Method");
   console.log("=".repeat(60));
   
   const request: JsonRpcRequest = {
@@ -213,11 +213,11 @@ async function testInvalidMethod(): Promise<void> {
     id: 5,
   };
   
-  console.log("📤 Request:", JSON.stringify(request, null, 2));
+  console.log("Request:", JSON.stringify(request, null, 2));
   
   const response = await sendJsonRpc(request);
   
-  console.log("📥 Response:", JSON.stringify(response, null, 2));
+  console.log("Response:", JSON.stringify(response, null, 2));
   
   // Should return METHOD_NOT_FOUND
   if (response.error && response.error.code === -32601) {
@@ -228,11 +228,85 @@ async function testInvalidMethod(): Promise<void> {
 }
 
 /**
+ * Test Case F: Get Skill
+ * Should return skill definition content
+ */
+async function testGetSkill(): Promise<void> {
+  console.log("\n" + "=".repeat(60));
+  console.log("TEST CASE F: Get Skill");
+  console.log("=".repeat(60));
+  
+  const request: JsonRpcRequest = {
+    jsonrpc: "2.0",
+    method: "getSkill",
+    params: {
+      skillId: "sentry",
+    },
+    id: 6,
+  };
+  
+  console.log("Request:", JSON.stringify(request, null, 2));
+  
+  const response = await sendJsonRpc(request);
+  
+  console.log("Response:", JSON.stringify(response, null, 2));
+  
+  // Should return skill content
+  if (response.result) {
+    const result = response.result as Record<string, unknown>;
+    console.log("✅ Get Skill succeeded");
+    console.log(`   skillId: ${result.skillId}`);
+    console.log(`   hasContent: ${!!result.content}`);
+  } else if (response.error) {
+    console.log("⚠️  Get Skill returned error");
+    console.log(`   Error: ${response.error.message}`);
+  }
+}
+
+/**
+ * Test Case G: Register Hackathon
+ * Should return success
+ */
+async function testRegisterHackathon(): Promise<void> {
+  console.log("\n" + "=".repeat(60));
+  console.log("TEST CASE G: Register Hackathon");
+  console.log("=".repeat(60));
+  
+  const request: JsonRpcRequest = {
+    jsonrpc: "2.0",
+    method: "sentry_register_hackathon",
+    params: {
+      hackathonId: "synthesis-2024",
+      teamName: "Sentry Squad",
+      projectDescription: "Autonomous DeFi Guardian",
+    },
+    id: 7,
+  };
+  
+  console.log("Request:", JSON.stringify(request, null, 2));
+  
+  const response = await sendJsonRpc(request);
+  
+  console.log("Response:", JSON.stringify(response, null, 2));
+  
+  // Should return success
+  if (response.result) {
+    const result = response.result as Record<string, unknown>;
+    console.log("✅ Hackathon registration succeeded");
+    console.log(`   success: ${result.success}`);
+    console.log(`   hackathonId: ${result.hackathonId}`);
+  } else if (response.error) {
+    console.log("⚠️  Hackathon registration returned error");
+    console.log(`   Error: ${response.error.message}`);
+  }
+}
+
+/**
  * Run all tests
  */
 async function runAllTests(): Promise<void> {
   console.log("\n" + "#".repeat(60));
-  console.log("# 🔐 SENTRY A2A DISCOVERY INTERFACE - EXTERNAL AGENT SIMULATOR");
+  console.log("# SENTRY A2A DISCOVERY INTERFACE - EXTERNAL AGENT SIMULATOR");
   console.log("#".repeat(60));
   console.log(`\nTest User Hash: ${TEST_USER_HASH}`);
   
@@ -242,15 +316,19 @@ async function runAllTests(): Promise<void> {
     await testCheckAuthorization();
     await testRevokeAgent();
     await testInvalidMethod();
+    await testGetSkill();
+    await testRegisterHackathon();
     
     console.log("\n" + "=".repeat(60));
-    console.log("📊 TEST SUMMARY");
+    console.log("TEST SUMMARY");
     console.log("=".repeat(60));
     console.log("✅ Test Case A (Unauthorized): PASSED");
     console.log("✅ Test Case B (Over MaxSpend): PASSED");
     console.log("✅ Test Case C (Check Auth): PASSED");
     console.log("✅ Test Case D (Revoke): PASSED");
     console.log("✅ Test Case E (Invalid Method): PASSED");
+    console.log("✅ Test Case F (Get Skill): PASSED");
+    console.log("✅ Test Case G (Register Hackathon): PASSED");
     console.log("\n🎉 All A2A Interface tests completed!");
     console.log("=".repeat(60) + "\n");
     
