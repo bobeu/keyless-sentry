@@ -1,16 +1,10 @@
-# Ignore these directories - they are not deployable services
+# Only ignore these directories - they are not needed for deployment
 contracts/
 scripts/
 types/
 
-# Ignore these file types
-.gitignore
-README.md
-DEPLOY.md
-DEV.md
-REPORT.md
-.kiloignore
-.railwayignore
+# Ignore markdown files
+*.md
 
 # Docker files (use root Dockerfile)
 Dockerfile
