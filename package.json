@@ -15,6 +15,6 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
-    "@keyless-collective/sdk": "../keyless-collective/packages/sdk"
+    "@keyless-collective/sdk": "0.1.2"
   }
 }
