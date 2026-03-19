@@ -2,11 +2,12 @@
   "$schema": "https://railway.app/schema.json",
   "name": "keyless-sentry",
   "services": {
-    "sentry-gateway": {
+    "sentry": {
       "build": {
         "context": ".",
         "dockerfile": "Dockerfile"
       },
+      "init": true,
       "ports": {
         "18789": {
           "port": 18789,
@@ -23,18 +24,49 @@
         "/app/gateway/src/workspace": {}
       },
       "deploy": {
-        "memory": 512
+        "memory": 512,
+        "numReplicas": 1
       }
     }
   },
+  "plugins": {
+    "postgres": {
+      "plan": "starter"
+    }
+  },
   "environmentVariables": {
-    "KEYLESS_BASE_URL": "",
-    "KEYLESS_CHAIN_ID": "",
-    "KEYLESS_OWNER": "",
-    "ENCRYPTION_KEY": "",
-    "SENTRY_REGISTRY_ADDRESS": "",
-    "SENTRY_RPC_URL": "",
-    "SENTRY_CHAIN_ID": "",
-    "WALLETCONNECT_PROJECT_ID": ""
+    "KEYLESS_BASE_URL": {
+      "description": "Keyless SDK coordinator URL"
+    },
+    "KEYLESS_CHAIN_ID": {
+      "description": "Blockchain chain ID (11142220 = Celo Alfajores, 44787 = Celo Mainnet)",
+      "value": "44787"
+    },
+    "KEYLESS_OWNER": {
+      "description": "Owner wallet address that controls the agent"
+    },
+    "PRIVATE_KEY": {
+      "description": "Private key for signing ERC-8004 registration transactions"
+    },
+    "ENCRYPTION_KEY": {
+      "description": "64-character hex encryption key for vault"
+    },
+    "ERC8004_REGISTRY_ADDRESS": {
+      "description": "ERC-8004 Identity Registry contract address on Celo"
+    },
+    "SENTRY_REGISTRY_ADDRESS": {
+      "description": "Sentry Registry contract address (legacy)"
+    },
+    "SENTRY_RPC_URL": {
+      "description": "Celo RPC URL",
+      "value": "https://rpc.celo.org"
+    },
+    "SENTRY_CHAIN_ID": {
+      "description": "Celo chain ID",
+      "value": "1114220"
+    },
+    "WALLETCONNECT_PROJECT_ID": {
+      "description": "WalletConnect project ID"
+    }
   }
 }
