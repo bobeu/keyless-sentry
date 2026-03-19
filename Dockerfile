@@ -10,15 +10,13 @@ COPY core ./core
 COPY gateway ./gateway
 COPY skills ./skills
 # DEPRECATED: contracts are not connected to Sentry runtime
-# COPY contracts ./contracts
 
-# Install dependencies
+# Install dependencies (this installs all workspaces including core)
 RUN bun install
 
-# Generate Prisma Client (required for database access)
-# This creates the @prisma/client in node_modules
+# Generate Prisma Client - must run from core directory where prisma/schema.prisma exists
 WORKDIR /app/core
-RUN bunx prisma generate
+RUN bun add -D @prisma/client && bunx prisma generate
 
 # Go back to app root
 WORKDIR /app
