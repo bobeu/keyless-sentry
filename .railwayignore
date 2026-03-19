@@ -1,0 +1,19 @@
+# Ignore these directories - they are not deployable services
+contracts/
+scripts/
+types/
+
+# Ignore these file types
+.gitignore
+README.md
+DEPLOY.md
+DEV.md
+REPORT.md
+.kiloignore
+.railwayignore
+
+# Docker files (use root Dockerfile)
+Dockerfile
+Dockerfile.tee
+docker-compose.yml
+docker-compose.tee.yml
