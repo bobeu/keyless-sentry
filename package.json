@@ -2,11 +2,7 @@
   "name": "keyless-sentry",
   "type": "module",
   "private": true,
-  "workspaces": [
-    "core",
-    "gateway",
-    "contracts"
-  ],
+  "workspaces": [],
   "scripts": {
     "typecheck": "tsc -b",
     "build": "bun run typecheck",
