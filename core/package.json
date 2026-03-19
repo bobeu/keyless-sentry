@@ -21,7 +21,7 @@
     "@walletconnect/types": "^2.23.8",
     "@walletconnect/utils": "^2.23.8",
     "dotenv": "^17.3.1",
-    "viem": "^2.47.4",
+    "viem": "^2.47.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

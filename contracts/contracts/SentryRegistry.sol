@@ -106,14 +106,14 @@ contract SentryRegistry {
     }
 
     /// @notice Store an owner-signed AgentAuthorization signature for later sub-transactions.
-    function storeAgentAuthorization(bytes32 userIdHash, bytes32 agentIdHash, bytes calldata signature) external onlyAdmin {
-        if (!profiles[userIdHash].registered) revert NotRegistered(userIdHash);
-        agentAuthSignatures[userIdHash][agentIdHash] = signature;
-        emit AgentAuthorizationStored(userIdHash, agentIdHash, signature);
-    }
+    // function storeAgentAuthorization(bytes32 userIdHash, bytes32 agentIdHash, bytes calldata signature) external onlyAdmin {
+    //     if (!profiles[userIdHash].registered) revert NotRegistered(userIdHash);
+    //     agentAuthSignatures[userIdHash][agentIdHash] = signature;
+    //     emit AgentAuthorizationStored(userIdHash, agentIdHash, signature);
+    // }
 
-    function getAgentAuthorization(bytes32 userIdHash, bytes32 agentIdHash) external view returns (bytes memory) {
-        return agentAuthSignatures[userIdHash][agentIdHash];
-    }
+    // function getAgentAuthorization(bytes32 userIdHash, bytes32 agentIdHash) external view returns (bytes memory) {
+    //     return agentAuthSignatures[userIdHash][agentIdHash];
+    // }
 }
 

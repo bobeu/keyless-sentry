@@ -9,7 +9,7 @@
  */
 
 import { z } from "zod";
-import { createPublicClient, http, encodeFunctionData, createWalletClient, type Hex, type Address } from "viem";
+import { createPublicClient, http, encodeFunctionData, createWalletClient, type Hex, type Address, type WalletClient } from "viem";
 import { celo, celoSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { AppError } from "../errors";
@@ -109,7 +109,7 @@ export interface IdentityCheckResult {
  */
 export class ERC8004IdentityService {
   private readonly publicClient: ReturnType<typeof createPublicClient>;
-  private readonly walletClient: ReturnType<typeof createWalletClient> | null;
+  private readonly walletClient: WalletClient | null;
   private readonly registryAddress: Address;
   private readonly config: IdentityConfig;
   private readonly identityWalletAddress: Address;
@@ -316,8 +316,9 @@ export class ERC8004IdentityService {
       try {
         const chain = this.config.SENTRY_CHAIN_ID === 11142220 ? celoSepolia : celo;
         const account = this.walletClient.account;
+        if(!account) throw new Error("Private key undefined");
         console.log("[identity] Submitting registration transaction...");
-        const txHash = await this.walletClient.writeContractSync({
+        const receipt = await this.walletClient.writeContractSync({
           address: this.registryAddress,
           abi: ERC8004_ABI,
           functionName: "registerIdentity",
@@ -326,16 +327,16 @@ export class ERC8004IdentityService {
           account
         });
         
-        console.log(`[identity] Transaction submitted: ${txHash}`);
+        console.log(`[identity] Transaction submitted: ${receipt.transactionHash}`);
         
         // Wait for transaction receipt
-        const receipt = await this.publicClient.waitForTransactionReceipt({
-          hash: txHash,
+        const result = await this.publicClient.waitForTransactionReceipt({
+          hash: receipt.transactionHash,
         });
         
         console.log(`[identity] Transaction confirmed in block: ${receipt.blockNumber}`);
         
-        return ok({ txHash });
+        return ok({ txHash: result.transactionHash });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
         console.error("[identity] Transaction failed:", errorMessage);
