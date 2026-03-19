@@ -7,7 +7,6 @@
         "context": ".",
         "dockerfile": "Dockerfile"
       },
-      "init": true,
       "ports": {
         "18789": {
           "port": 18789,

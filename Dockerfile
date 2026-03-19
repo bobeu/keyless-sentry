@@ -3,7 +3,7 @@ FROM oven/bun:latest
 WORKDIR /app
 
 # Copy package files
-COPY package.json bun.lockb tsconfig.json tsconfig.base.json ./
+COPY package.json bun.lock tsconfig.json tsconfig.base.json ./
 
 # Copy source code
 COPY core ./core
