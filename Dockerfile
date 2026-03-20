@@ -49,7 +49,12 @@ RUN apt-get update \
     tini \
     python3 \
     python3-venv \
+    curl \
   && rm -rf /var/lib/apt/lists/*
+
+# Install Bun for the wrapper to spawn OpenClaw
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:${PATH}"
 
 # `openclaw update` expects pnpm. Provide it in the runtime image.
 RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
