@@ -6,7 +6,10 @@
   "scripts": {
     "typecheck": "tsc -b",
     "build": "bun run typecheck",
-    "start": "bun --cwd gateway run start",
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "smoke": "node scripts/smoke.js",
+    "test": "node --test",
     "test:a2a": "bun run scripts/test_a2a_request.ts",
     "prod:local": "docker-compose up -d && echo 'Sentry is Live. Close VS Code to save RAM and Bandwidth.'"
   },
@@ -15,6 +18,9 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
-    "@keyless-collective/sdk": "0.1.2"
+    "@keyless-collective/sdk": "0.1.2",
+    "express": "^5.1.0",
+    "http-proxy": "^1.18.1",
+    "tar": "^7.5.4"
   }
 }

@@ -17,6 +17,7 @@ import { z } from "zod";
 import { handleTelegramMessage } from "./router";
 import { getOpenClawService } from "./services/openclaw";
 import { initHeartbeat, startHeartbeat, type HeartbeatResult } from "./services/heartbeat";
+import { createHttpServer } from "./httpServer";
 
 /**
  * Initialize ERC-8004 Identity Service
@@ -260,11 +261,19 @@ async function main(): Promise<Result<void>> {
       }));
     });
 
-    const linesRes = await readLines();
-    if (!linesRes.ok) return linesRes;
-
+    // Create HTTP server for cloud deployments (Railway, etc.)
     const ctx = { orchestrator: orchRes.value, signatureRequests, txWatcher } as const;
     const fullCtx = { ...ctx, registry } as const;
+    
+    // Start HTTP server if not in headless mode
+    const isHeadless = process.env.HEADLESS === "true";
+    if (!isHeadless) {
+      console.log("[gateway] Starting HTTP server for cloud deployment...");
+      createHttpServer(fullCtx);
+    }
+
+    const linesRes = await readLines();
+    if (!linesRes.ok) return linesRes;
 
     for await (const line of linesRes.value) {
       const input = await coerceInput(line);

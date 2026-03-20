@@ -1,5 +1,10 @@
 # dependencies (bun install)
 node_modules
+npm-debug.log*
+
+
+# Build artifacts
+/dist
 
 # output
 out
@@ -35,3 +40,11 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Dev doc
 DEV.md
+OPENCLAW_CONFIGURATION_GUIDE.md
+OPENCLAW_DEPLOYMENT_REPORT.md
+
+# Backup exports
+*.tar.gz
+
+# TEE
+Dockerfile.tee
