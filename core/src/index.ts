@@ -1,7 +1,6 @@
 export * from "./errors";
 export * from "./keylessSdkTypes";
 export * from "./keylessSdkRuntime";
-export * from "./personality";
 export * from "./result";
 export * from "./validation";
 export * from "./orchestrator";
@@ -18,7 +17,8 @@ export {
   SENTRY_VERSION,
 } from "./identity/erc8004";
 export * from "./db/repository";
-export * from "./reasoning/personalityEngine";
+export * from "./db/bountyRepository";
+export * from "./db/registrationRepository";
 export * from "./reasoning/skillDiscoveryService";
 export * from "./skills/seal";
 export * from "./skills/invoice";

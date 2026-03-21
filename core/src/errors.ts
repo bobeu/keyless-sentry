@@ -11,6 +11,19 @@ export const AppErrorCodeSchema = z.enum([
   "DB_ERROR",
   "CONTRACT_ERROR",
   "IDENTITY_ERROR",
+  "BOUNTY_CREATE_FAILED",
+  "BOUNTY_VERIFY_FAILED",
+  "BOUNTY_NOT_FOUND",
+  "BOUNTY_GET_ACTIVE_FAILED",
+  "BOUNTY_SUBMIT_FAILED",
+  "BOUNTY_RELEASE_FAILED",
+  "BOUNTY_GET_BY_ID_FAILED",
+  "BOUNTY_UPDATE_STATUS_FAILED",
+  "BOUNTY_SUBMIT_PROOF_FAILED",
+  "WALLET_ERROR",
+  "REGISTRATION_ERROR",
+  "SIGNATURE_ERROR",
+  "INSUFFICIENT_BALANCE",
 ]);
 
 export type AppErrorCode = z.infer<typeof AppErrorCodeSchema>;
@@ -63,4 +76,3 @@ export function toAppError(causeUnknown: unknown, fallback: AppErrorShape): AppE
     });
   }
 }
-

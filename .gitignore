@@ -42,6 +42,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 DEV.md
 OPENCLAW_CONFIGURATION_GUIDE.md
 OPENCLAW_DEPLOYMENT_REPORT.md
+SETUP_GUIDE.md
 
 # Backup exports
 *.tar.gz

@@ -21,12 +21,10 @@ RUN corepack enable
 WORKDIR /openclaw
 
 # Pin to a known-good ref (tag/branch). Override in Railway template settings if needed.
-# Using a released tag avoids build breakage when `main` temporarily references unpublished packages.
 ARG OPENCLAW_GIT_REF=v2026.3.8
 RUN git clone --depth 1 --branch "${OPENCLAW_GIT_REF}" https://github.com/openclaw/openclaw.git .
 
-# Patch: relax version requirements for packages that may reference unpublished versions.
-# Apply to all extension package.json files to handle workspace protocol (workspace:*).
+# Patch: relax version requirements for packages
 RUN set -eux; \
   find ./extensions -name 'package.json' -type f | while read -r f; do \
     sed -i -E 's/"openclaw"[[:space:]]*:[[:space:]]*">=[^"]+"/"openclaw": "*"/g' "$f"; \
@@ -37,6 +35,28 @@ RUN pnpm install --no-frozen-lockfile
 RUN pnpm build
 ENV OPENCLAW_PREFER_PNPM=1
 RUN pnpm ui:install && pnpm ui:build
+
+
+# Build Next.js frontend
+FROM node:22-bookworm AS next-build
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source files
+COPY src ./src
+COPY core ./core
+COPY gateway ./gateway
+COPY skills ./skills
+COPY next.config.ts tailwind.config.ts postcss.config.js tsconfig.json ./
+
+# Build Next.js
+RUN npm run build
 
 
 # Runtime image
@@ -59,18 +79,29 @@ ENV PATH="/root/.bun/bin:${PATH}"
 # `openclaw update` expects pnpm. Provide it in the runtime image.
 RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
 
-# Persist user-installed tools by default by targeting the Railway volume.
-# - npm global installs -> /data/npm
-# - pnpm global installs -> /data/pnpm (binaries) + /data/pnpm_store (store)
+# Persist user-installed tools by default
 ENV NPM_CONFIG_PREFIX=/data/npm
 ENV NPM_CONFIG_CACHE=/data/npm-cache
 ENV PNPM_HOME=/data/pnpm
 ENV PNPM_STORE_DIR=/data/pnpm_store
 ENV PATH="/data/npm/bin:/data/pnpm:${PATH}"
 
+# BountyClaw Environment Variables
+ENV NODE_ENV=production
+ENV IS_TEE=false
+ENV HEARTBEAT_INTERVAL_MINUTES=30
+ENV WORKSPACE_DIR=/app/gateway/src/workspace
+
+# Keyless SDK Configuration
+ENV KEYLESS_COORDINATOR_URL=https://coordinator.keyless.tech
+ENV KEYLESS_CHAIN_ID=44787
+
+# Database (set by Railway via DATABASE_URL)
+# ENV DATABASE_URL=postgresql://...
+
 WORKDIR /app
 
-# Wrapper deps
+# Copy wrapper deps
 COPY package.json ./
 RUN npm install --omit=dev && npm cache clean --force
 
@@ -87,6 +118,10 @@ COPY core ./core
 COPY gateway ./gateway
 COPY skills ./skills
 
+# Copy built Next.js app
+COPY --from=next-build /app/.next ./.next
+COPY --from=next-build /app/public ./public
+
 # Generate Prisma Client
 WORKDIR /app/core
 RUN npm install @prisma/client && npx prisma generate
@@ -95,9 +130,12 @@ WORKDIR /app
 # The wrapper listens on $PORT.
 # IMPORTANT: Do not set a default PORT here.
 # Railway injects PORT at runtime and routes traffic to that port.
-# If we force a different port, deployments can come up but the domain will route elsewhere.
-EXPOSE 18789
+EXPOSE 3000
 
 # Ensure PID 1 reaps zombies and forwards signals.
 ENTRYPOINT ["tini", "--"]
-CMD ["node", "src/server.js"]
+
+# Run both Next.js (frontend) and OpenClaw (gateway)
+# Next.js handles HTTP requests on port 3000
+# OpenClaw runs on port 18789 internally
+CMD ["sh", "-c", "node /openclaw/dist/entry.js gateway run --bind loopback --port 18789 & npx next start -p 3000"]

@@ -4,12 +4,13 @@
  * Runs every 30 minutes to perform critical health checks:
  * 1. Vault Health: Check Postgres connection and count active signatures
  * 2. Integrity Check: Re-run Selfclaw hash to detect code tampering
+ * 3. Bounty Verification: Check for pending submissions and trigger AI Judge
  * 
  * If integrity check fails (hash changed), logs CRITICAL_INTEGRITY_FAILURE
  */
 
 import { safeAsync, safeSync, err, ok, type Result, AppError } from "@keyless-sentry/core";
-import { getAuthorizationRepository } from "@keyless-sentry/core";
+import { getAuthorizationRepository, getBountyRepository } from "@keyless-sentry/core";
 import { getSelfclawService } from "../auth/selfclaw";
 
 export interface HeartbeatResult {
@@ -24,6 +25,11 @@ export interface HeartbeatResult {
     currentHash: string;
     bootHash: string;
     isTEE: boolean;
+  };
+  bountyVerification: {
+    pendingSubmissions: number;
+    verified: number;
+    error?: string;
   };
   status: "healthy" | "degraded" | "critical";
 }
@@ -111,6 +117,10 @@ async function runHeartbeat(
       bootHash: bootHash || "",
       isTEE: false,
     },
+    bountyVerification: {
+      pendingSubmissions: 0,
+      verified: 0,
+    },
     status: "healthy",
   };
   
@@ -131,6 +141,14 @@ async function runHeartbeat(
     console.error("[heartbeat] CRITICAL_INTEGRITY_FAILURE: Code hash mismatch detected!");
     console.error(`[heartbeat] Boot hash:   ${integrityRes.bootHash.substring(0, 16)}...`);
     console.error(`[heartbeat] Current hash: ${integrityRes.currentHash.substring(0, 16)}...`);
+  }
+  
+  // 3. Bounty Verification Check
+  const bountyRes = await checkBountyVerifications();
+  result.bountyVerification = bountyRes;
+  
+  if (bountyRes.pendingSubmissions > 0) {
+    console.log(`[heartbeat] Found ${bountyRes.pendingSubmissions} pending submissions to verify`);
   }
   
   // Log the result
@@ -223,4 +241,100 @@ async function checkIntegrity(): Promise<{
  */
 export function getBootHash(): string | null {
   return bootHash;
+}
+
+/**
+ * Check bounty verifications - look for pending submissions and trigger AI Judge
+ * This is the "Verification Loop" that runs every 30 minutes
+ */
+async function checkBountyVerifications(): Promise<{
+  pendingSubmissions: number;
+  verified: number;
+  error?: string;
+}> {
+  return safeSync("heartbeat.checkBountyVerifications", async () => {
+    try {
+      const bountyRepo = getBountyRepository();
+      
+      // Get all ESCROWED bounties (submitted, awaiting verification)
+      const bountiesRes = await bountyRepo.getActive();
+      if (!bountiesRes.ok) {
+        return ok({
+          pendingSubmissions: 0,
+          verified: 0,
+          error: bountiesRes.error.message,
+        });
+      }
+      
+      const escrowedBounties = bountiesRes.value.filter((b: { status: string; id: string; title: string; description: string; proofUrl?: string }) => b.status === "ESCROWED");
+      
+      let verified = 0;
+      
+      // For each pending submission, trigger AI Judge
+      for (const bounty of escrowedBounties) {
+        console.log(`[heartbeat] Processing bounty ${bounty.id}: ${bounty.title}`);
+        
+        // AI Judge evaluation (simulated - in production, this would call an AI service)
+        const verdict = await evaluateWithAIJudge(bounty);
+        
+        if (verdict.approved) {
+          // Auto-approve: release funds
+          const releaseRes = await bountyRepo.release(bounty.id, true);
+          if (releaseRes.ok) {
+            verified++;
+            console.log(`[heartbeat] Bounty ${bounty.id} VERIFIED and released`);
+          }
+        } else {
+          // Reject: mark as open again
+          await bountyRepo.release(bounty.id, false);
+          console.log(`[heartbeat] Bounty ${bounty.id} REJECTED: ${verdict.reasoning}`);
+        }
+      }
+      
+      return ok({
+        pendingSubmissions: escrowedBounties.length,
+        verified,
+      });
+    } catch (causeUnknown) {
+      return ok({
+        pendingSubmissions: 0,
+        verified: 0,
+        error: causeUnknown instanceof Error ? causeUnknown.message : "Unknown error",
+      });
+    }
+  }).ok
+    ? { pendingSubmissions: 0, verified: 0 }
+    : { pendingSubmissions: 0, verified: 0, error: "Failed to check bounties" };
+}
+
+/**
+ * AI Judge evaluation function
+ * In production, this would call an AI service (e.g., OpenAI, Anthropic)
+ * to evaluate the submission against the bounty requirements
+ */
+async function evaluateWithAIJudge(bounty: {
+  id: string;
+  title: string;
+  description: string;
+  proofUrl?: string;
+}): Promise<{ approved: boolean; reasoning: string }> {
+  // Simulated AI Judge - in production, replace with actual AI call
+  console.log(`[heartbeat] AI Judge evaluating bounty: ${bounty.title}`);
+  
+  // Simple heuristic: if there's a proofUrl, auto-approve for demo
+  // In production, this would:
+  // 1. Fetch the proofUrl content
+  // 2. Compare against bounty.description requirements
+  // 3. Use AI to evaluate quality
+  if (bounty.proofUrl && bounty.proofUrl.length > 0) {
+    return {
+      approved: true,
+      reasoning: "Proof URL provided and meets basic requirements. Auto-approved for demo.",
+    };
+  }
+  
+  return {
+    approved: false,
+    reasoning: "No proof URL provided. Submission cannot be verified.",
+  };
 }

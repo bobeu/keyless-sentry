@@ -1,6 +1,6 @@
 id: keyless-sdk
 name: Keyless Collective SDK Documentation Skill
-version: 0.1.0
+version: 0.1.2
 description: >
   Machine-readable usage guide for @keyless-collective/sdk. Load this skill when you need accurate
   method signatures, payload shapes, or examples for KeylessClient workflows (wallet creation, authorization,
@@ -136,4 +136,5 @@ notes:
   - "Never request or store private keys. Owners sign via WalletConnect/deep-link."
   - "AgentAuthorization is a JSON object signed with personal_sign of the JSON string."
   - "Always validate inputs with schemas and handle coordinator errors as user-facing messages."
+  - "Use the coordinator's /auth-link endpoint to generate signing URLs for users."
 

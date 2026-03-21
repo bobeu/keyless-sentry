@@ -4,6 +4,7 @@ import { AppError } from "./errors";
 import { err, ok, type Result } from "./result";
 import { safeAsync } from "./validation";
 import { getAuthorizationRepository, getAuditLogRepository, getSentryIdentityRepository } from "./db/repository";
+import { getBountyRepository } from "./db/bountyRepository";
 import { getSelfclawVerifier } from "./auth/selfclaw";
 import { getOwnerVerifier } from "./owner";
 import { readFile } from "fs/promises";
@@ -102,6 +103,51 @@ const UpdateIdentityParamsSchema = z
   })
   .strict();
 
+// Bounty-Bot JSON-RPC Schemas
+const BountyCreateParamsSchema = z
+  .object({
+    callerTelegramId: z.string().min(1),
+    title: z.string().min(1).max(200),
+    description: z.string().min(1),
+    rewardAmount: z.string().min(1), // in wei
+    hunterAddress: z.string().optional(), // specific hunter or open
+    expiresAt: z.number().optional(), // Unix timestamp
+  })
+  .strict();
+
+const BountyGetActiveParamsSchema = z
+  .object({
+    callerTelegramId: z.string().optional(),
+    hunterAddress: z.string().optional(),
+  })
+  .strict();
+
+const BountySubmitParamsSchema = z
+  .object({
+    callerTelegramId: z.string().min(1),
+    bountyId: z.string().min(1),
+    proofUrl: z.string().min(1),
+    hunterAddress: z.string().min(1), // Hunter's wallet address
+  })
+  .strict();
+
+const BountyReleaseParamsSchema = z
+  .object({
+    callerTelegramId: z.string().min(1),
+    bountyId: z.string().min(1),
+    approved: z.boolean(),
+  })
+  .strict();
+
+const BountyVerifyParamsSchema = z
+  .object({
+    callerTelegramId: z.string().min(1),
+    bountyId: z.string().min(1),
+    verdict: z.enum(["APPROVED", "REJECTED"]),
+    reasoning: z.string().min(1),
+  })
+  .strict();
+
 /**
  * INTERNAL: Register for Synthesis hackathon
  * Called automatically when ERC-8004 identity is registered on boot
@@ -157,6 +203,20 @@ export class JsonRpcHandler {
     const req = parseResult.value;
 
     switch (req.method) {
+      // Bounty-Bot A2A Methods
+      case "bounty_create":
+        return await this.handleBountyCreate(req.params, req.id);
+      case "bounty_get_active":
+        return await this.handleBountyGetActive(req.params, req.id);
+      case "bounty_submit":
+        return await this.handleBountySubmit(req.params, req.id);
+      case "bounty_release":
+        return await this.handleBountyRelease(req.params, req.id);
+      case "bounty_verify":
+        return await this.handleBountyVerify(req.params, req.id);
+      case "getSkill":
+        return await this.handleGetSkill(req.params, req.id);
+      // Legacy Sentry methods (for backward compatibility)
       case "sentry_request_payment":
         return await this.handleRequestPayment(req.params, req.id);
       case "sentry_check_authorization":
@@ -165,8 +225,6 @@ export class JsonRpcHandler {
         return await this.handleRevokeAgent(req.params, req.id);
       case "sentry_verify_integrity":
         return await this.handleVerifyIntegrity(req.params, req.id);
-      case "getSkill":
-        return await this.handleGetSkill(req.params, req.id);
       case "sentry_register_hackathon":
         return await this.handleRegisterHackathon(req.params, req.id);
       case "sentry_get_identity":
@@ -177,7 +235,7 @@ export class JsonRpcHandler {
         return this.errorResponse(
           JsonRpcErrorCode.METHOD_NOT_FOUND,
           `Method '${req.method}' not found`,
-          { availableMethods: ["sentry_request_payment", "sentry_check_authorization", "sentry_revoke_agent", "sentry_verify_integrity", "getSkill", "sentry_register_hackathon"] },
+          { availableMethods: ["bounty_create", "bounty_get_active", "bounty_submit", "bounty_release", "bounty_verify", "getSkill", "sentry_request_payment", "sentry_check_authorization"] },
           req.id,
         );
     }
@@ -357,6 +415,7 @@ export class JsonRpcHandler {
     // Map skillId to file path
     const skillPaths: Record<string, string> = {
       sentry: "./skills/sentry/SKILL.md",
+      bounty: "./skills/bounty/SKILL.md",
       sdk: "./skills/sdk/SKILL.md",
     };
 
@@ -582,6 +641,308 @@ export class JsonRpcHandler {
         { cause: String(causeUnknown) },
         id
       );
+    }
+  }
+
+  // ==================== Bounty-Bot A2A Methods ====================
+
+  /**
+   * Handle bounty_create method
+   * Creates a new bounty with escrow wallet
+   */
+  private async handleBountyCreate(params: unknown, id: string | number): Promise<JsonRpcResponse | JsonRpcErrorResponse> {
+    const parsed = BountyCreateParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      return this.errorResponse(JsonRpcErrorCode.INVALID_REQUEST, "Invalid params", { issues: parsed.error.issues }, id);
+    }
+
+    const p = parsed.data;
+
+    try {
+      const bountyRepo = getBountyRepository();
+      
+      // Create escrow wallet via Keyless SDK (simulated for now)
+      const escrowAddress = "0x" + "b".repeat(40);
+      
+      const createRes = await bountyRepo.create({
+        title: p.title,
+        description: p.description,
+        rewardAmount: p.rewardAmount,
+        hunterAddress: p.hunterAddress,
+        creatorHashId: p.callerTelegramId,
+        escrowAddress,
+        expiresAt: p.expiresAt ? new Date(p.expiresAt * 1000) : undefined,
+      });
+
+      if (!createRes.ok) {
+        return this.errorResponse(JsonRpcErrorCode.INTERNAL_ERROR, "Failed to create bounty", { cause: createRes.error.message }, id);
+      }
+
+      const bounty = createRes.value;
+      
+      // Log the bounty creation
+      const auditRepo = getAuditLogRepository();
+      await auditRepo.create({
+        userHashedId: p.callerTelegramId,
+        action: "BOUNTY_CREATED",
+        status: "SUCCESS",
+        details: { bountyId: bounty.id, title: p.title, rewardAmount: p.rewardAmount },
+      });
+
+      return {
+        jsonrpc: "2.0",
+        result: {
+          success: true,
+          bountyId: bounty.id,
+          escrowAddress: bounty.escrowAddress,
+          status: bounty.status,
+        },
+        id,
+      };
+    } catch (causeUnknown) {
+      return this.errorResponse(JsonRpcErrorCode.INTERNAL_ERROR, "Failed to create bounty", { cause: String(causeUnknown) }, id);
+    }
+  }
+
+  /**
+   * Handle bounty_get_active method
+   * Returns all active bounties
+   */
+  private async handleBountyGetActive(params: unknown, id: string | number): Promise<JsonRpcResponse | JsonRpcErrorResponse> {
+    const parsed = BountyGetActiveParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      return this.errorResponse(JsonRpcErrorCode.INVALID_REQUEST, "Invalid params", { issues: parsed.error.issues }, id);
+    }
+
+    const p = parsed.data;
+
+    try {
+      const bountyRepo = getBountyRepository();
+      const bountiesRes = await bountyRepo.getActive({
+        hunterAddress: p.hunterAddress,
+        creatorHashId: p.callerTelegramId,
+      });
+
+      if (!bountiesRes.ok) {
+        return this.errorResponse(JsonRpcErrorCode.INTERNAL_ERROR, "Failed to get bounties", { cause: bountiesRes.error.message }, id);
+      }
+
+      const bounties = bountiesRes.value.map((b) => ({
+        id: b.id,
+        title: b.title,
+        description: b.description,
+        rewardAmount: b.rewardAmount,
+        status: b.status,
+        createdAt: b.createdAt,
+        expiresAt: b.expiresAt || null,
+      }));
+
+      return {
+        jsonrpc: "2.0",
+        result: {
+          bounties,
+          count: bounties.length,
+        },
+        id,
+      };
+    } catch (causeUnknown) {
+      return this.errorResponse(JsonRpcErrorCode.INTERNAL_ERROR, "Failed to get bounties", { cause: String(causeUnknown) }, id);
+    }
+  }
+
+  /**
+   * Handle bounty_submit method
+   * Hunter submits proof for a bounty
+   */
+  private async handleBountySubmit(params: unknown, id: string | number): Promise<JsonRpcResponse | JsonRpcErrorResponse> {
+    const parsed = BountySubmitParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      return this.errorResponse(JsonRpcErrorCode.INVALID_REQUEST, "Invalid params", { issues: parsed.error.issues }, id);
+    }
+
+    const p = parsed.data;
+
+    try {
+      const bountyRepo = getBountyRepository();
+      
+      // Verify bounty exists and is active
+      const bountyRes = await bountyRepo.getById(p.bountyId);
+      if (!bountyRes || !bountyRes.ok) {
+        return this.errorResponse(JsonRpcErrorCode.INTERNAL_ERROR, "Failed to get bounty", { cause: bountyRes ? String(bountyRes.error) : "Unknown error" }, id);
+      }
+
+      const bounty = bountyRes.value;
+      if (!bounty) {
+        return this.errorResponse(JsonRpcErrorCode.INVALID_REQUEST, "Bounty not found", { bountyId: p.bountyId }, id);
+      }
+
+      if (bounty.status !== "OPEN" && bounty.status !== "ESCROWED") {
+        return this.errorResponse(JsonRpcErrorCode.INVALID_REQUEST, "Bounty is not active", { status: bounty.status }, id);
+      }
+
+      // Submit proof
+      const submitRes = await bountyRepo.submitProof(p.bountyId, p.proofUrl);
+      if (!submitRes.ok) {
+        return this.errorResponse(JsonRpcErrorCode.INTERNAL_ERROR, "Failed to submit proof", { cause: String(submitRes.error) }, id);
+      }
+
+      // Log submission
+      const auditRepo = getAuditLogRepository();
+      await auditRepo.create({
+        userHashedId: p.hunterAddress,
+        action: "BOUNTY_SUBMISSION",
+        status: "PENDING_VERIFICATION",
+        details: { bountyId: p.bountyId, proofUrl: p.proofUrl, hunterAddress: p.hunterAddress },
+      });
+
+      return {
+        jsonrpc: "2.0",
+        result: {
+          success: true,
+          bountyId: p.bountyId,
+          status: "ESCROWED",
+          message: "Submission received. AI Judge will verify shortly.",
+        },
+        id,
+      };
+    } catch (causeUnknown) {
+      return this.errorResponse(JsonRpcErrorCode.INTERNAL_ERROR, "Failed to submit proof", { cause: String(causeUnknown) }, id);
+    }
+  }
+
+  /**
+   * Handle bounty_release method
+   * Releases reward to hunter after verification
+   */
+  private async handleBountyRelease(params: unknown, id: string | number): Promise<JsonRpcResponse | JsonRpcErrorResponse> {
+    const parsed = BountyReleaseParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      return this.errorResponse(JsonRpcErrorCode.INVALID_REQUEST, "Invalid params", { issues: parsed.error.issues }, id);
+    }
+
+    const p = parsed.data;
+
+    try {
+      const bountyRepo = getBountyRepository();
+      
+      // First get bounty to get hunter address and reward
+      const bountyRes = await bountyRepo.getById(p.bountyId);
+      if (!bountyRes || !bountyRes.ok) {
+        return this.errorResponse(JsonRpcErrorCode.INTERNAL_ERROR, "Failed to get bounty", { cause: bountyRes ? String(bountyRes.error) : "Unknown error" }, id);
+      }
+      const bounty = bountyRes.value;
+      if (!bounty) {
+        return this.errorResponse(JsonRpcErrorCode.INVALID_REQUEST, "Bounty not found", { bountyId: p.bountyId }, id);
+      }
+
+      // Release the bounty
+      const releaseRes = await bountyRepo.release(p.bountyId, p.approved);
+
+      if (!releaseRes.ok) {
+        return this.errorResponse(JsonRpcErrorCode.INTERNAL_ERROR, "Failed to release bounty", { cause: String(releaseRes.error) }, id);
+      }
+
+      // Log release
+      const auditRepo = getAuditLogRepository();
+      await auditRepo.create({
+        userHashedId: bounty.hunterAddress || "unknown",
+        action: p.approved ? "BOUNTY_RELEASED" : "BOUNTY_CANCELLED",
+        status: "SUCCESS",
+        details: { bountyId: p.bountyId, rewardAmount: bounty.rewardAmount, approved: p.approved },
+      });
+
+      return {
+        jsonrpc: "2.0",
+        result: {
+          success: true,
+          bountyId: p.bountyId,
+          status: p.approved ? "RELEASED" : "CANCELLED",
+          hunterAddress: bounty.hunterAddress,
+          rewardAmount: bounty.rewardAmount,
+        },
+        id,
+      };
+    } catch (causeUnknown) {
+      return this.errorResponse(JsonRpcErrorCode.INTERNAL_ERROR, "Failed to release bounty", { cause: String(causeUnknown) }, id);
+    }
+  }
+
+  /**
+   * Handle bounty_verify method
+   * AI Judge verifies a submission
+   */
+  private async handleBountyVerify(params: unknown, id: string | number): Promise<JsonRpcResponse | JsonRpcErrorResponse> {
+    const parsed = BountyVerifyParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      return this.errorResponse(JsonRpcErrorCode.INVALID_REQUEST, "Invalid params", { issues: parsed.error.issues }, id);
+    }
+
+    const p = parsed.data;
+
+    try {
+      const bountyRepo = getBountyRepository();
+      const bountyRes = await bountyRepo.getById(p.bountyId);
+
+      if (!bountyRes || !bountyRes.ok) {
+        return this.errorResponse(JsonRpcErrorCode.INTERNAL_ERROR, "Failed to get bounty", { cause: bountyRes ? String(bountyRes.error) : "Unknown error" }, id);
+      }
+
+      const bounty = bountyRes.value;
+      if (!bounty) {
+        return this.errorResponse(JsonRpcErrorCode.INVALID_REQUEST, "Bounty not found", { bountyId: p.bountyId }, id);
+      }
+
+      // AI Judge logic
+      const isApproved = p.verdict === "APPROVED";
+
+      if (isApproved) {
+        await bountyRepo.release(p.bountyId, true);
+        
+        const auditRepo = getAuditLogRepository();
+        await auditRepo.create({
+          userHashedId: bounty.hunterAddress || "unknown",
+          action: "BOUNTY_VERIFIED",
+          status: "SUCCESS",
+          details: { bountyId: p.bountyId, verdict: p.verdict, reasoning: p.reasoning },
+        });
+
+        return {
+          jsonrpc: "2.0",
+          result: {
+            success: true,
+            bountyId: p.bountyId,
+            verdict: "APPROVED",
+            reasoning: p.reasoning,
+            status: "COMPLETED",
+          },
+          id,
+        };
+      } else {
+        // Reject - reset to active
+        // Would need to add a reject method to repository
+        
+        const auditRepo = getAuditLogRepository();
+        await auditRepo.create({
+          userHashedId: bounty.hunterAddress || "unknown",
+          action: "BOUNTY_REJECTED",
+          status: "FAILED",
+          details: { bountyId: p.bountyId, verdict: p.verdict, reasoning: p.reasoning },
+        });
+
+        return {
+          jsonrpc: "2.0",
+          result: {
+            success: true,
+            bountyId: p.bountyId,
+            verdict: "REJECTED",
+            reasoning: p.reasoning,
+            status: "ACTIVE",
+          },
+          id,
+        };
+      }
+    } catch (causeUnknown) {
+      return this.errorResponse(JsonRpcErrorCode.INTERNAL_ERROR, "Failed to verify bounty", { cause: String(causeUnknown) }, id);
     }
   }
 }

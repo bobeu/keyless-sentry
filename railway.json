@@ -1,15 +1,15 @@
 {
   "$schema": "https://railway.app/schema.json",
-  "name": "keyless-sentry",
+  "name": "bountyclaw",
   "services": {
-    "sentry": {
+    "web": {
       "build": {
         "context": ".",
         "dockerfile": "Dockerfile"
       },
       "ports": {
-        "18789": {
-          "port": 18789,
+        "3000": {
+          "port": 3000,
           "proxy": true
         }
       },
@@ -23,7 +23,7 @@
         "/app/gateway/src/workspace": {}
       },
       "deploy": {
-        "memory": 512,
+        "memory": 1024,
         "numReplicas": 1
       }
     }
@@ -34,8 +34,9 @@
     }
   },
   "environmentVariables": {
-    "KEYLESS_BASE_URL": {
-      "description": "Keyless SDK coordinator URL"
+    "KEYLESS_COORDINATOR_URL": {
+      "description": "Keyless SDK coordinator URL",
+      "value": "https://coordinator.keyless.tech"
     },
     "KEYLESS_CHAIN_ID": {
       "description": "Blockchain chain ID (11142220 = Celo Alfajores, 44787 = Celo Mainnet)",
@@ -44,28 +45,23 @@
     "KEYLESS_OWNER": {
       "description": "Owner wallet address that controls the agent"
     },
-    "PRIVATE_KEY": {
-      "description": "Private key for signing ERC-8004 registration transactions"
-    },
     "ENCRYPTION_KEY": {
       "description": "64-character hex encryption key for vault"
     },
-    "ERC8004_REGISTRY_ADDRESS": {
-      "description": "ERC-8004 Identity Registry contract address on Celo"
-    },
-    "SENTRY_REGISTRY_ADDRESS": {
-      "description": "Sentry Registry contract address (legacy)"
-    },
-    "SENTRY_RPC_URL": {
+    "CELO_RPC_URL": {
       "description": "Celo RPC URL",
       "value": "https://rpc.celo.org"
     },
-    "SENTRY_CHAIN_ID": {
+    "CELO_CHAIN_ID": {
       "description": "Celo chain ID",
-      "value": "1114220"
+      "value": "44787"
     },
     "WALLETCONNECT_PROJECT_ID": {
       "description": "WalletConnect project ID"
+    },
+    "NEXT_PUBLIC_API_URL": {
+      "description": "API URL for frontend to connect to",
+      "value": "/api"
     }
   }
 }

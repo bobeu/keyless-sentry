@@ -18,8 +18,8 @@ import {
 } from "@keyless-sentry/core";
 import {
   hashExternalUserId,
-  Personality,
-  type Personality as PersonalityValue,
+  getBountyRepository,
+  getRegistrationRepository,
 } from "@keyless-sentry/core";
 import type { CreateUserInput } from "@keyless-sentry/core";
 import type { Command, CommandContext, CommandMap } from "./command";
@@ -905,24 +905,235 @@ const SentryRegisterHackathonCommand: Command<SentryRegisterHackathonInput, {
     }),
 };
 
+/**
+ * BountyListInputSchema - List bounties with optional filters
+ */
+const BountyListInputSchema = z
+  .object({
+    status: z.enum(["OPEN", "IN_PROGRESS", "ESCROWED", "RELEASED", "CANCELLED"]).optional(),
+    hunterAddress: z.string().optional(),
+  })
+  .strict();
+type BountyListInput = z.infer<typeof BountyListInputSchema>;
+
+/**
+ * BountyListCommand - Returns bounties filtered by status or hunter (A2A API)
+ */
+const BountyListCommand: Command<BountyListInput, Array<{
+  id: string;
+  title: string;
+  description: string;
+  rewardAmount: string;
+  currency: string;
+  escrowAddress?: string;
+  status: string;
+  creatorHashId: string;
+  createdAt: Date;
+}>> = {
+  name: "bounty_list",
+  description: "List bounties filtered by status or hunter address (A2A API)",
+  inputSchema: BountyListInputSchema,
+  execute: async (ctx, input) =>
+    safeAsync("gateway.commands.bountyList.execute", async () => {
+      const validated = parseWithSchema(
+        BountyListInputSchema,
+        input,
+        "gateway.commands.bountyList.input",
+      );
+      if (!validated.ok) return validated;
+
+      const { status, hunterAddress } = validated.value;
+      const bountyRepo = getBountyRepository();
+
+      const bountiesRes = await bountyRepo.getActive({ status, hunterAddress });
+      if (!bountiesRes.ok) return err(bountiesRes.error);
+
+      return ok(bountiesRes.value);
+    }),
+};
+
+/**
+ * BountyJoinInputSchema - Register for a bounty
+ */
+const BountyJoinInputSchema = z
+  .object({
+    bountyId: z.string(),
+    hunterAddress: z.string(),
+  })
+  .strict();
+type BountyJoinInput = z.infer<typeof BountyJoinInputSchema>;
+
+/**
+ * BountyJoinCommand - Register an agent for a specific bounty (A2A API)
+ */
+const BountyJoinCommand: Command<BountyJoinInput, {
+  status: string;
+  verification: {
+    bounty_id: string;
+    hunter: string;
+    escrow_status: string;
+    instructions: string;
+  };
+}> = {
+  name: "bounty_join",
+  description: "Register an agent for a specific bounty (A2A API)",
+  inputSchema: BountyJoinInputSchema,
+  execute: async (ctx, input) =>
+    safeAsync("gateway.commands.bountyJoin.execute", async () => {
+      const validated = parseWithSchema(
+        BountyJoinInputSchema,
+        input,
+        "gateway.commands.bountyJoin.input",
+      );
+      if (!validated.ok) return validated;
+
+      const { bountyId, hunterAddress } = validated.value;
+      const bountyRepo = getBountyRepository();
+      const registrationRepo = getRegistrationRepository();
+
+      // Check if bounty exists
+      const bountyRes = await bountyRepo.getById(bountyId);
+      if (!bountyRes.ok) return err(bountyRes.error);
+      if (!bountyRes.value) {
+        return err(
+          new AppError({
+            code: "BOUNTY_NOT_FOUND",
+            message: `Bounty ${bountyId} not found`,
+            context: "gateway.commands.bountyJoin",
+          }),
+        );
+      }
+
+      const bounty = bountyRes.value;
+
+      // Check if already registered
+      const existingRes = await registrationRepo.getByBountyAndHunter(bountyId, hunterAddress);
+      if (existingRes.ok && existingRes.value) {
+        return ok({
+          status: "already_registered",
+          verification: {
+            bounty_id: bountyId,
+            hunter: hunterAddress,
+            escrow_status: bounty.status,
+            instructions: "You are already registered for this bounty. Submit proof using bounty_submit.",
+          },
+        });
+      }
+
+      // Create registration
+      const regRes = await registrationRepo.create({
+        bountyId,
+        hunterAddress,
+      });
+      if (!regRes.ok) return err(regRes.error);
+
+      // Update bounty status to IN_PROGRESS
+      await bountyRepo.updateStatus(bountyId, "IN_PROGRESS");
+
+      return ok({
+        status: "success",
+        verification: {
+          bounty_id: bountyId,
+          hunter: hunterAddress,
+          escrow_status: "LOCKED",
+          instructions: "Submit proof via bounty_submit method or Telegram.",
+        },
+      });
+    }),
+};
+
+/**
+ * BountySubmitInputSchema - Submit proof for a bounty
+ */
+const BountySubmitInputSchema = z
+  .object({
+    bountyId: z.string(),
+    hunterAddress: z.string(),
+    proofUrl: z.string().url(),
+  })
+  .strict();
+type BountySubmitInput = z.infer<typeof BountySubmitInputSchema>;
+
+/**
+ * BountySubmitCommand - Submit proof of work for AI Judge verification (A2A API)
+ */
+const BountySubmitCommand: Command<BountySubmitInput, {
+  status: string;
+  verification_id: string;
+  message: string;
+}> = {
+  name: "bounty_submit",
+  description: "Submit proof of work for AI Judge verification (A2A API)",
+  inputSchema: BountySubmitInputSchema,
+  execute: async (ctx, input) =>
+    safeAsync("gateway.commands.bountySubmit.execute", async () => {
+      const validated = parseWithSchema(
+        BountySubmitInputSchema,
+        input,
+        "gateway.commands.bountySubmit.input",
+      );
+      if (!validated.ok) return validated;
+
+      const { bountyId, hunterAddress, proofUrl } = validated.value;
+      const bountyRepo = getBountyRepository();
+      const registrationRepo = getRegistrationRepository();
+
+      // Check if bounty exists
+      const bountyRes = await bountyRepo.getById(bountyId);
+      if (!bountyRes.ok) return err(bountyRes.error);
+      if (!bountyRes.value) {
+        return err(
+          new AppError({
+            code: "BOUNTY_NOT_FOUND",
+            message: `Bounty ${bountyId} not found`,
+            context: "gateway.commands.bountySubmit",
+          }),
+        );
+      }
+
+      // Check if hunter is registered
+      const regRes = await registrationRepo.getByBountyAndHunter(bountyId, hunterAddress);
+      if (!regRes.ok) return err(regRes.error);
+      if (!regRes.value) {
+        return err(
+          new AppError({
+            code: "NOT_REGISTERED",
+            message: "You must join the bounty first using bounty_join",
+            context: "gateway.commands.bountySubmit",
+          }),
+        );
+      }
+
+      const registration = regRes.value;
+
+      // Submit proof
+      const submitRes = await registrationRepo.submitProof(registration.id, proofUrl);
+      if (!submitRes.ok) return err(submitRes.error);
+
+      // Update bounty status to ESCROWED
+      await bountyRepo.updateStatus(bountyId, "ESCROWED");
+
+      const verificationId = `ver_${bountyId}_${Date.now()}`;
+
+      return ok({
+        status: "pending_verification",
+        verification_id: verificationId,
+        message: "AI Judge is evaluating your submission...",
+      });
+    }),
+};
+
 export function buildCommandMap(): CommandMap {
   const built = safeSync("gateway.commands.buildCommandMap", () =>
     ok(
       Object.freeze({
+        // A2A API Commands (Synthesis Standard) - Bounty-Bot
+        [BountyListCommand.name]: BountyListCommand,
+        [BountyJoinCommand.name]: BountyJoinCommand,
+        [BountySubmitCommand.name]: BountySubmitCommand,
+        // Legacy commands
         [HealthCommand.name]: HealthCommand,
-        [SupportedChainsCommand.name]: SupportedChainsCommand,
-        [StartCommand.name]: StartCommand,
-        [CreateWalletCommand.name]: CreateWalletCommand,
-        [AuthorizeAgentCommand.name]: AuthorizeAgentCommand,
-        [GetInvoiceCommand.name]: GetInvoiceCommand,
-        [ReserveTaskCommand.name]: ReserveTaskCommand,
-        [CompleteTaskCommand.name]: CompleteTaskCommand,
-        [DistributeCommand.name]: DistributeCommand,
-        [RevokeCommand.name]: RevokeCommand,
-        [HistoryCommand.name]: HistoryCommand,
         [HelpCommand.name]: HelpCommand,
-        [SentryVerifyIntegrityCommand.name]: SentryVerifyIntegrityCommand,
-        [SentryRegisterHackathonCommand.name]: SentryRegisterHackathonCommand,
       }) as CommandMap,
     ),
   );
