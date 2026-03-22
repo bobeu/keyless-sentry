@@ -1473,8 +1473,18 @@ const nextProxy = httpProxy.createServer({
   ws: true,
 });
 
+// Next.js static assets - proxy _next/static and similar paths
+app.use("/_next", async (req, res) => {
+  return nextProxy.web(req, res, { target: "http://127.0.0.1:3001" });
+});
+
 // Next.js frontend route - proxy to Next.js running on port 3001
 app.use("/frontend", async (req, res) => {
+  return nextProxy.web(req, res, { target: "http://127.0.0.1:3001" });
+});
+
+// Also handle /api if Next.js API routes exist
+app.use("/api", async (req, res) => {
   return nextProxy.web(req, res, { target: "http://127.0.0.1:3001" });
 });
 
