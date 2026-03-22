@@ -59,6 +59,11 @@ COPY gateway ./gateway
 COPY skills ./skills
 COPY next.config.mjs tailwind.config.ts postcss.config.mjs tsconfig.json ./
 
+# Generate Prisma Client for Next.js build
+WORKDIR /app/core
+RUN bun add @prisma/client prisma && bunx prisma generate
+WORKDIR /app
+
 # Build Next.js
 RUN bun run build
 
