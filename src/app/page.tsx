@@ -9,11 +9,12 @@ const BrutalistCard = ({ children, className = "" }: { children: React.ReactNode
   </div>
 );
 
-const BrutalistButton = ({ children, color = "bg-yellow-400", onClick, type = "button" }: { children: React.ReactNode; color?: string; onClick?: () => void; type?: "button" | "submit" }) => (
+const BrutalistButton = ({ children, disabled, className, color = "bg-yellow-400", onClick, type = "button" }: { children: React.ReactNode; color?: string; className?: string; disabled: boolean; onClick?: () => void; type?: "button" | "submit" }) => (
   <button 
     type={type}
     onClick={onClick}
-    className={`border-4 border-black ${color} px-6 py-2 font-bold shadow-[4px_4px_0px_000000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all`}
+    disabled={disabled}
+    className={className || `border-4 border-black ${color} px-6 py-2 font-bold shadow-[4px_4px_0px_000000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all`}
   >
     {children}
   </button>
@@ -82,42 +83,44 @@ export default function BountyPage() {
   const [description, setDescription] = useState("");
   const [reward, setReward] = useState("");
   const [loading, setLoading] = useState(false);
+  const [stats, setStats] = useState({
+    totalEscrowed: "0",
+    activeBounties: 0,
+    totalHunters: 0
+  });
 
-  // Mock data for demo
+  // Fetch data from database API
   useEffect(() => {
-    setBounties([
-      {
-        id: "1",
-        title: "Fix GitHub Bug #101",
-        description: "Authentication error in login flow",
-        rewardAmount: "20",
-        currency: "cUSD",
-        status: "OPEN",
-        creatorHashId: "0x1234",
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: "2",
-        title: "Add Dark Mode Toggle",
-        description: "Implement dark mode switch in settings",
-        rewardAmount: "50",
-        currency: "cUSD",
-        status: "IN_PROGRESS",
-        creatorHashId: "0x5678",
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: "3",
-        title: "Write API Documentation",
-        description: "Complete OpenAPI spec for v2 endpoints",
-        rewardAmount: "100",
-        currency: "cUSD",
-        status: "ESCROWED",
-        escrowAddress: "0xabcd",
-        creatorHashId: "0x9abc",
-        createdAt: new Date().toISOString(),
-      },
-    ]);
+    const fetchBounties = async () => {
+      try {
+        const response = await fetch('/api/bounties');
+        const result = await response.json();
+        if (result.success && result.data) {
+          setBounties(result.data);
+        } else {
+          console.error('Failed to fetch bounties:', result.error);
+        }
+      } catch (error) {
+        console.error('Error fetching bounties:', error);
+      }
+    };
+    
+    const fetchStats = async () => {
+      try {
+        const response = await fetch('/api/stats');
+        const result = await response.json();
+        if (result.success && result.data) {
+          setStats(result.data);
+        } else {
+          console.error('Failed to fetch stats:', result.error);
+        }
+      } catch (error) {
+        console.error('Error fetching stats:', error);
+      }
+    };
+    
+    fetchBounties();
+    fetchStats();
   }, []);
 
   const handleCreateBounty = async () => {
@@ -125,21 +128,43 @@ export default function BountyPage() {
     
     setLoading(true);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      const response = await fetch('/api/bounties', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title,
+          description,
+          rewardAmount: reward,
+          currency: "cUSD",
+          creatorHashId: "0xOWNER",
+        }),
+      });
+      
+      const result = await response.json();
+      
+      if (result.success && result.data) {
+        const newBounty: Bounty = {
+          id: result.data.id,
+          title: result.data.title,
+          description: result.data.description,
+          rewardAmount: result.data.rewardAmount,
+          currency: result.data.currency,
+          status: result.data.status,
+          creatorHashId: result.data.creatorHashId,
+          createdAt: result.data.createdAt,
+        };
+        
+        setBounties([newBounty, ...bounties]);
+      } else {
+        console.error('Failed to create bounty:', result.error);
+      }
+    } catch (error) {
+      console.error('Error creating bounty:', error);
+    }
     
-    const newBounty: Bounty = {
-      id: String(Date.now()),
-      title,
-      description,
-      rewardAmount: reward,
-      currency: "cUSD",
-      status: "OPEN",
-      creatorHashId: "0xOWNER",
-      createdAt: new Date().toISOString(),
-    };
-    
-    setBounties([newBounty, ...bounties]);
     setTitle("");
     setDescription("");
     setReward("");
@@ -147,31 +172,31 @@ export default function BountyPage() {
   };
 
   return (
-    <div className="min-h-screen bg-white text-black p-8 font-['Comic_Sans_MS','Comic_Sans_MS',cursive]">
+    <div className="min-h-screen max-w-7xl text-black p-8 font-['Comic_Sans_MS','Comic_Sans_MS',cursive]">
       {/* Header */}
       <header className="border-4 border-black bg-yellow-400 p-6 mb-8 shadow-[4px_4px_0px_000000]">
-        <h1 className="text-5xl font-black uppercase italic">Bounty-Bot: The Arbiter</h1>
+        <h1 className="text-5xl font-black uppercase italic">BountyClaw: The Arbiter</h1>
         <p className="text-xl font-bold mt-2">Autonomous Gig Economy Protocol</p>
       </header>
       
       <div className="grid grid-cols-12 gap-8">
         {/* TVL Metrics */}
-        <BrutalistCard className="col-span-4 bg-white">
-          <h2 className="text-xl font-bold uppercase underline mb-4">Total Escrowed</h2>
-          <p className="text-4xl font-black text-[#39FF14] drop-shadow-[2px_2px_0_#000]">12,500 cUSD</p>
-        </BrutalistCard>
-        
-        {/* Active Bounties Count */}
-        <BrutalistCard className="col-span-4 bg-white">
-          <h2 className="text-xl font-bold uppercase underline mb-4">Active Bounties</h2>
-          <p className="text-4xl font-black">{bounties.filter(b => b.status === "OPEN").length}</p>
-        </BrutalistCard>
-        
-        {/* Hunters */}
-        <BrutalistCard className="col-span-4 bg-white">
-          <h2 className="text-xl font-bold uppercase underline mb-4">Total Hunters</h2>
-          <p className="text-4xl font-black">42</p>
-        </BrutalistCard>
+         <BrutalistCard className="col-span-4 bg-white">
+           <h2 className="text-xl font-bold uppercase underline mb-4">Total Escrowed</h2>
+           <p className="text-4xl font-black text-[#39FF14] drop-shadow-[2px_2px_0_#000]">{stats.totalEscrowed} cUSD</p>
+         </BrutalistCard>
+         
+         {/* Active Bounties Count */}
+         <BrutalistCard className="col-span-4 bg-white">
+           <h2 className="text-xl font-bold uppercase underline mb-4">Active Bounties</h2>
+           <p className="text-4xl font-black">{stats.activeBounties}</p>
+         </BrutalistCard>
+         
+         {/* Hunters */}
+         <BrutalistCard className="col-span-4 bg-white">
+           <h2 className="text-xl font-bold uppercase underline mb-4">Total Hunters</h2>
+           <p className="text-4xl font-black">{stats.totalHunters}</p>
+         </BrutalistCard>
         
         {/* Post Bounty */}
         <BrutalistCard className="col-span-8 bg-white">
@@ -203,13 +228,13 @@ export default function BountyPage() {
         <BrutalistCard className="col-span-4 bg-white">
           <h2 className="text-xl font-bold uppercase underline mb-4">Quick Actions</h2>
           <div className="space-y-4">
-            <BrutalistButton color="bg-white" className="w-full">
+            <BrutalistButton color="bg-white" className="w-full" disabled={false}>
               View My Bounties
             </BrutalistButton>
-            <BrutalistButton color="bg-white" className="w-full">
+            <BrutalistButton color="bg-white" className="w-full" disabled={false}>
               My Submissions
             </BrutalistButton>
-            <BrutalistButton color="bg-white" className="w-full">
+            <BrutalistButton color="bg-white" className="w-full" disabled={false}>
               Escrow Balance
             </BrutalistButton>
           </div>
@@ -239,11 +264,11 @@ export default function BountyPage() {
                     </span>
                     {bounty.status === "ESCROWED" && <PayoutBadge />}
                     {bounty.status !== "OPEN" && bounty.status !== "ESCROWED" ? (
-                      <BrutalistButton color="bg-gray-200" className="text-sm">
+                      <BrutalistButton color="bg-gray-200" className="text-sm" disabled={false}>
                         View
                       </BrutalistButton>
                     ) : (
-                      <BrutalistButton color="bg-white" className="text-sm">
+                      <BrutalistButton color="bg-white" className="text-sm" disabled={false}>
                         Join
                       </BrutalistButton>
                     )}
@@ -257,7 +282,7 @@ export default function BountyPage() {
       
       {/* Footer */}
       <footer className="mt-12 border-4 border-black p-6 text-center">
-        <p className="font-bold">Bounty-Bot: The Autonomous Gig Economy Hub</p>
+        <p className="font-bold">BountyClaw: The Autonomous Gig Economy Hub</p>
         <p className="text-sm">Powered by Keyless Collective SDK • ERC-8004 Compatible</p>
       </footer>
     </div>
