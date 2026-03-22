@@ -42,16 +42,15 @@ FROM node:22-bookworm AS next-build
 
 WORKDIR /app
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
-ENV PNPM_HOME=/root/.local/share/pnpm
-ENV PATH="/root/.local/share/pnpm:${PATH}"
+# Install Bun
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:${PATH}"
 
 # Copy package files
-COPY package.json pnpm-lock.yaml ./
+COPY package.json bun.lock ./
 
 # Install dependencies
-RUN pnpm install --frozen-lockfile
+RUN bun install --no-frozen-lockfile
 
 # Copy source files
 COPY src ./src
@@ -62,11 +61,11 @@ COPY next.config.mjs tailwind.config.ts postcss.config.mjs tsconfig.json ./
 
 # Generate Prisma Client for Next.js build
 WORKDIR /app/core
-RUN pnpm add @prisma/client prisma && pnpm exec prisma generate
+RUN bun add @prisma/client prisma && bunx prisma generate
 WORKDIR /app
 
 # Build Next.js
-RUN pnpm run build
+RUN bun run build
 
 
 # Runtime image
@@ -82,7 +81,11 @@ RUN apt-get update \
     curl \
   && rm -rf /var/lib/apt/lists/*
 
-# Install pnpm for the wrapper to spawn OpenClaw
+# Install Bun for the wrapper to spawn OpenClaw
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:${PATH}"
+
+# `openclaw update` expects pnpm. Provide it in the runtime image.
 RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
 
 # Persist user-installed tools by default
@@ -108,8 +111,8 @@ ENV KEYLESS_CHAIN_ID=44787
 WORKDIR /app
 
 # Copy wrapper deps
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --production
+COPY package.json bun.lock ./
+RUN bun install --no-frozen-lockfile --production
 
 # Copy built openclaw
 COPY --from=openclaw-build /openclaw /openclaw
@@ -130,7 +133,7 @@ COPY --from=next-build /app/public ./public
 
 # Generate Prisma Client
 WORKDIR /app/core
-RUN pnpm add @prisma/client prisma && pnpm exec prisma generate
+RUN bun add @prisma/client prisma && bunx prisma generate
 WORKDIR /app
 
 # The wrapper listens on $PORT.
@@ -144,4 +147,4 @@ ENTRYPOINT ["tini", "--"]
 # Run both Next.js (frontend) and OpenClaw (gateway)
 # Next.js handles HTTP requests on port 3000
 # OpenClaw runs on port 18789 internally
-CMD ["sh", "-c", "node /openclaw/dist/entry.js gateway run --bind loopback --port 18789 & pnpm exec next start -p 3000"]
+CMD ["sh", "-c", "node /openclaw/dist/entry.js gateway run --bind loopback --port 18789 & npx next start -p 3000"]
