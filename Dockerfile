@@ -151,4 +151,4 @@ ENTRYPOINT ["tini", "--"]
 # Run both Next.js (frontend) and OpenClaw (gateway)
 # Next.js handles HTTP requests on port 3000
 # OpenClaw runs on port 18789 internally
-CMD ["sh", "-c", "node /openclaw/dist/entry.js gateway run --bind loopback --port 18789 & npx next start -p 3000"]
+CMD ["sh", "-c", "node /openclaw/dist/entry.js gateway run --bind loopback --port 18789 & node src/server.js"]
