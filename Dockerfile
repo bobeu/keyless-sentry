@@ -59,6 +59,9 @@ COPY gateway ./gateway
 COPY skills ./skills
 COPY next.config.mjs tailwind.config.ts postcss.config.mjs tsconfig.json ./
 
+# Ensure public folder exists for Next.js build
+RUN mkdir -p public
+
 # Generate Prisma Client for Next.js build
 WORKDIR /app/core
 RUN bun add @prisma/client prisma && bunx prisma generate
@@ -129,7 +132,8 @@ COPY skills ./skills
 
 # Copy built Next.js app
 COPY --from=next-build /app/.next ./.next
-COPY --from=next-build /app/public ./public
+# Copy public folder if it exists - use shell conditional
+RUN cp -r /app/public ./public 2>/dev/null || true
 
 # Generate Prisma Client
 WORKDIR /app/core
