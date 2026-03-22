@@ -112,7 +112,7 @@ WORKDIR /app
 
 # Copy wrapper deps
 COPY package.json bun.lock ./
-RUN bun install --no-frozen-lockfile --production
+RUN bun install --no-frozen-lockfile
 
 # Copy built openclaw
 COPY --from=openclaw-build /openclaw /openclaw
