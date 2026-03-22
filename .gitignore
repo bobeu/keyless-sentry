@@ -1,10 +1,14 @@
 # dependencies (bun install)
 node_modules
 npm-debug.log*
-
+.next
+/.next/
 
 # Build artifacts
 /dist
+# typescript
+*.tsbuildinfo
+next-env.d.ts
 
 # output
 out
