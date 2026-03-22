@@ -148,7 +148,10 @@ EXPOSE 3000
 # Ensure PID 1 reaps zombies and forwards signals.
 ENTRYPOINT ["tini", "--"]
 
-# Run both Next.js (frontend) and OpenClaw (gateway)
-# Next.js handles HTTP requests on port 3000
-# OpenClaw runs on port 18789 internally
-CMD ["sh", "-c", "node /openclaw/dist/entry.js gateway run --bind loopback --port 18789 & node src/server.js"]
+# Run OpenClaw (gateway), Next.js (frontend), and Express server (setup)
+# - OpenClaw runs on port 18789 internally
+# - Next.js runs on port 3001 (frontend - accessible at /frontend/*)
+# - Express (src/server.js) runs on port 3000 and handles /setup and proxies to gateway
+# 
+# To access Next.js frontend, use: https://your-railway-app.railway.app/frontend
+CMD ["sh", "-c", "node /openclaw/dist/entry.js gateway run --bind loopback --port 18789 & npx next start -p 3001 & node src/server.js"]
