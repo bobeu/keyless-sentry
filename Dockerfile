@@ -53,7 +53,7 @@ COPY src ./src
 COPY core ./core
 COPY gateway ./gateway
 COPY skills ./skills
-COPY next.config.ts tailwind.config.ts postcss.config.js tsconfig.json ./
+COPY next.config.ts tailwind.config.ts postcss.config.mjs tsconfig.json ./
 
 # Build Next.js
 RUN npm run build
