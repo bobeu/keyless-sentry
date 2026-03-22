@@ -42,11 +42,15 @@ FROM node:22-bookworm AS next-build
 
 WORKDIR /app
 
+# Install Bun
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:${PATH}"
+
 # Copy package files
-COPY package.json package-lock.json* ./
+COPY package.json bun.lock ./
 
 # Install dependencies
-RUN npm ci
+RUN bun install
 
 # Copy source files
 COPY src ./src
@@ -56,7 +60,7 @@ COPY skills ./skills
 COPY next.config.mjs tailwind.config.ts postcss.config.mjs tsconfig.json ./
 
 # Build Next.js
-RUN npm run build
+RUN bun run build
 
 
 # Runtime image
@@ -102,14 +106,14 @@ ENV KEYLESS_CHAIN_ID=44787
 WORKDIR /app
 
 # Copy wrapper deps
-COPY package.json ./
-RUN npm install --omit=dev && npm cache clean --force
+COPY package.json bun.lock ./
+RUN bun install --production
 
 # Copy built openclaw
 COPY --from=openclaw-build /openclaw /openclaw
 
 # Provide an openclaw executable
-RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /openclaw/dist/entry.js "$@"' > /usr/local/bin/openclaw \
+RUN printf '%s\n' '#!/usr/bin/env bash' 'exec bun /openclaw/dist/entry.js "$@"' > /usr/local/bin/openclaw \
   && chmod +x /usr/local/bin/openclaw
 
 # Copy source files
@@ -124,7 +128,7 @@ COPY --from=next-build /app/public ./public
 
 # Generate Prisma Client
 WORKDIR /app/core
-RUN npm install @prisma/client && npx prisma generate
+RUN bun install @prisma/client && bunx prisma generate
 WORKDIR /app
 
 # The wrapper listens on $PORT.
