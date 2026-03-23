@@ -23,6 +23,7 @@ RUN bun run build
 # Runtime image
 FROM oven/bun:1
 ENV NODE_ENV=production
+ENV PORT=3000
 
 WORKDIR /app
 
@@ -40,5 +41,5 @@ COPY --from=builder /app/package.json ./
 # Expose port
 EXPOSE 3000
 
-# Start Next.js
-CMD ["bunx", "next", "start", "-p", "3000"]
+# Start Next.js (use PORT from Railway environment)
+CMD bunx next start -p $PORT
