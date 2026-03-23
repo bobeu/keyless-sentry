@@ -3,6 +3,9 @@ FROM oven/bun:1 AS builder
 
 WORKDIR /app
 
+# Copy package files FIRST (for dependency caching)
+COPY package.json bun.lock ./
+
 # Install dependencies
 RUN bun install --no-frozen-lockfile
 

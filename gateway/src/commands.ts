@@ -25,6 +25,7 @@ import { Personality } from "../../core/src/personality";
 import type { CreateUserInput } from "../../core/src";
 import type { Command, CommandContext, CommandMap } from "./command";
 import { isAddress, type Address } from "viem";
+import { submitToSynthesis, validateSubmissionPayload, type SynthesisSubmissionPayload } from "./services/api_client";
 
 // Re-export CreateUserInput for use in the module
 type CreateUser = CreateUserInput;
@@ -1123,6 +1124,68 @@ const BountySubmitCommand: Command<BountySubmitInput, {
     }),
 };
 
+/**
+ * Input schema for synthesis_submit_project command
+ */
+const SynthesisSubmitInputSchema = z.object({
+  title: z.string().min(1).describe("Project title"),
+  tagline: z.string().min(1).max(100).describe("100-character hook/summary"),
+  description: z.string().min(1).describe("Full project description in Markdown"),
+  video_url: z.string().url().describe("URL to project video"),
+  github_url: z.string().url().describe("Link to project repository"),
+  track_id: z.string().uuid().describe("UUID of the hackathon track"),
+  logo: z.string().url().optional().describe("Project logo URL (optional)"),
+  mollbookPostURL: z.string().url().optional().describe("Moltbook post URL (optional)"),
+});
+
+type SynthesisSubmitInput = z.infer<typeof SynthesisSubmitInputSchema>;
+type SynthesisSubmitOutput = {
+  status: string;
+  project_id: string;
+  message: string;
+};
+
+/**
+ * SynthesisSubmitProjectCommand - Submit project to Synthesis hackathon
+ */
+export const SynthesisSubmitProjectCommand: Command<SynthesisSubmitInput, SynthesisSubmitOutput> = {
+  name: "synthesis_submit_project",
+  description: "Submit a project draft to the Synthesis hackathon platform",
+  inputSchema: SynthesisSubmitInputSchema,
+  execute: async (ctx, input): Promise<Result<SynthesisSubmitOutput>> =>
+    safeAsync("gateway.commands.synthesisSubmitProject.execute", async () => {
+      const validated = parseWithSchema(
+        SynthesisSubmitInputSchema,
+        input,
+        "gateway.commands.synthesisSubmitProject.input",
+      );
+      if (!validated.ok) return validated;
+
+      const payload = validated.value;
+
+      // Validate required fields
+      const missingFields = validateSubmissionPayload(payload);
+      if (missingFields.length > 0) {
+        return err(
+          new AppError({
+            code: "COMMAND_ERROR",
+            message: `Missing required fields: ${missingFields.join(", ")}`,
+            context: "gateway.commands.synthesisSubmitProject",
+          }),
+        );
+      }
+
+      // Execute the submission
+      const result = await submitToSynthesis(payload as SynthesisSubmissionPayload);
+
+      return ok({
+        status: "submitted",
+        project_id: result.project_id,
+        message: "✅ Project submitted successfully! Flag is planted.",
+      });
+    }),
+};
+
 export function buildCommandMap(): CommandMap {
   const built = safeSync("gateway.commands.buildCommandMap", () =>
     ok(
@@ -1131,6 +1194,8 @@ export function buildCommandMap(): CommandMap {
         [BountyListCommand.name]: BountyListCommand,
         [BountyJoinCommand.name]: BountyJoinCommand,
         [BountySubmitCommand.name]: BountySubmitCommand,
+        // Synthesis Hackathon Submission
+        [SynthesisSubmitProjectCommand.name]: SynthesisSubmitProjectCommand,
         // Legacy commands
         [HealthCommand.name]: HealthCommand,
         [HelpCommand.name]: HelpCommand,
