@@ -13,9 +13,6 @@ RUN bun install --no-frozen-lockfile
 COPY src ./src
 COPY next.config.mjs tailwind.config.ts postcss.config.mjs tsconfig.json ./
 
-# Generate Prisma Client - needs DATABASE_URL
-RUN bun add @prisma/client && bunx prisma generate
-
 # Build Next.js
 RUN bun run build
 
@@ -36,10 +33,6 @@ RUN bun install --no-frozen-lockfile --production
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./
-
-# Copy Prisma client (generated during build)
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
 # Expose port
 EXPOSE 3000
