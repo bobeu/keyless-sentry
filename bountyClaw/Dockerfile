@@ -7,8 +7,7 @@ WORKDIR /app
 COPY package.json bun.lock ./
 
 # Install dependencies
-# RUN bun install --no-frozen-lockfile
-RUN bun install
+RUN bun install --frozen-lockfile
 
 # Copy source files and configs
 COPY src ./src
@@ -28,7 +27,7 @@ WORKDIR /app
 COPY package.json bun.lock ./
 
 # Install production dependencies
-RUN bun install --no-frozen-lockfile --production
+RUN bun install --frozen-lockfile --production
 
 # Copy built Next.js app
 COPY --from=builder /app/.next ./.next
