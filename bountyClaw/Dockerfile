@@ -13,6 +13,9 @@ RUN bun install --frozen-lockfile
 COPY src ./src
 COPY next.config.mjs tailwind.config.ts postcss.config.mjs tsconfig.json ./
 
+# Ensure public folder exists for Next.js build
+RUN mkdir -p public
+
 # Build Next.js
 RUN bun run build
 
