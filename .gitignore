@@ -53,3 +53,5 @@ SETUP_GUIDE.md
 
 # TEE
 Dockerfile.tee
+
+/bountyclaw-metadata.json
