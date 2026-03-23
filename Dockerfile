@@ -62,9 +62,9 @@ COPY next.config.mjs tailwind.config.ts postcss.config.mjs tsconfig.json ./
 # Ensure public folder exists for Next.js build
 RUN mkdir -p public
 
-# Generate Prisma Client for Next.js build
+# Generate Prisma Client for Next.js build - need all dependencies first
 WORKDIR /app/core
-RUN bun add @prisma/client prisma && bunx prisma generate
+RUN bun add dotenv @prisma/adapter-pg @prisma/client prisma && bunx prisma generate
 WORKDIR /app
 
 # Build Next.js
@@ -137,7 +137,7 @@ RUN cp -r /app/public ./public 2>/dev/null || true
 
 # Generate Prisma Client
 WORKDIR /app/core
-RUN bun add @prisma/client prisma && bunx prisma generate
+RUN bun add dotenv @prisma/adapter-pg @prisma/client prisma && bunx prisma generate
 WORKDIR /app
 
 # The wrapper listens on $PORT.
@@ -148,10 +148,7 @@ EXPOSE 3000
 # Ensure PID 1 reaps zombies and forwards signals.
 ENTRYPOINT ["tini", "--"]
 
-# Run OpenClaw (gateway), Next.js (frontend), and Express server (setup)
+# Run OpenClaw gateway and Express server
 # - OpenClaw runs on port 18789 internally
-# - Next.js runs on port 3001 (frontend - accessible at /frontend/*)
 # - Express (src/server.js) runs on port 3000 and handles /setup and proxies to gateway
-# 
-# To access Next.js frontend, use: https://your-railway-app.railway.app/frontend
-CMD ["sh", "-c", "node /openclaw/dist/entry.js gateway run --bind loopback --port 18789 & npx next start -p 3001 & node src/server.js"]
+CMD ["sh", "-c", "node /openclaw/dist/entry.js gateway run --bind loopback --port 18789 & node src/server.js"]

@@ -24,6 +24,7 @@ export const AppErrorCodeSchema = z.enum([
   "REGISTRATION_ERROR",
   "SIGNATURE_ERROR",
   "INSUFFICIENT_BALANCE",
+  "NOT_REGISTERED",
 ]);
 
 export type AppErrorCode = z.infer<typeof AppErrorCodeSchema>;

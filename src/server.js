@@ -1468,26 +1468,6 @@ proxy.on("proxyReqWs", (_proxyReq, req) => {
   attachGatewayAuthHeader(req);
 });
 
-const nextProxy = httpProxy.createServer({
-  target: "http://127.0.0.1:3001",
-  ws: true,
-});
-
-// Next.js static assets - proxy _next/static and similar paths
-app.use("/_next", async (req, res) => {
-  return nextProxy.web(req, res, { target: "http://127.0.0.1:3001" });
-});
-
-// Next.js frontend route - proxy to Next.js running on port 3001
-app.use("/frontend", async (req, res) => {
-  return nextProxy.web(req, res, { target: "http://127.0.0.1:3001" });
-});
-
-// Also handle /api if Next.js API routes exist
-app.use("/api", async (req, res) => {
-  return nextProxy.web(req, res, { target: "http://127.0.0.1:3001" });
-});
-
 app.use(requireDashboardAuth, async (req, res) => {
   // If not configured, force users to /setup for any non-setup routes.
   if (!isConfigured() && !req.path.startsWith("/setup")) {

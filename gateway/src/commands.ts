@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { HealthCheckResponse, SignatureRequest } from "@keyless-sentry/core";
+import type { SignatureRequest } from "../../core/src";
 import {
   AppError,
   err,
@@ -15,13 +15,14 @@ import {
   getAuditLogRepository,
   getUserRepository,
   getAuthorizationRepository,
-} from "@keyless-sentry/core";
+} from "../../core/src";
 import {
   hashExternalUserId,
   getBountyRepository,
   getRegistrationRepository,
-} from "@keyless-sentry/core";
-import type { CreateUserInput } from "@keyless-sentry/core";
+} from "../../core/src";
+import { Personality } from "../../core/src/personality";
+import type { CreateUserInput } from "../../core/src";
 import type { Command, CommandContext, CommandMap } from "./command";
 import { isAddress, type Address } from "viem";
 
@@ -170,8 +171,7 @@ type StartInput = z.infer<typeof StartInputSchema>;
 
 /**
  * StartCommand - Returns interactive components for onboarding
- * 
- * When called without arguments, returns personality selection buttons.
+ *  uments, returns personality selection buttons.
  * When called with personality, initiates the wallet creation flow.
  */
 const StartCommand: Command<StartInput, InteractiveComponents | { txHash: string; wallet: string }> = {

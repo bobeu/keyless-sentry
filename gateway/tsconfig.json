@@ -5,7 +5,12 @@
     "declaration": true,
     "declarationMap": true,
     "emitDeclarationOnly": true,
-    "outDir": "./dist"
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "@keyless-sentry/core": ["../core/src/index.ts"],
+      "@keyless-sentry/core/*": ["../core/src/*"]
+    }
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules"],

@@ -9,6 +9,8 @@ import { handleTelegramMessage } from "./router";
 import type { CommandContext } from "./command";
 import { buildCommandMap } from "./commands";
 import { getSelfclawService } from "./auth/selfclaw";
+import { getPrismaClient } from "../../core/src/db/client";
+import "dotenv/config";
 
 export interface HttpServerConfig {
   port: number;
@@ -47,6 +49,19 @@ export function createHttpServer(
       // JSON-RPC endpoint
       if (url.pathname === "/" && req.method === "POST") {
         return handleJsonRpcRequest(req, ctx, commandMap);
+      }
+      
+      // Bounties API endpoints
+      if (url.pathname === "/api/bounties" && req.method === "GET") {
+        return handleGetBounties(req, ctx);
+      }
+      if (url.pathname === "/api/bounties" && req.method === "POST") {
+        return handleCreateBounty(req, ctx);
+      }
+      
+      // Stats API endpoint
+      if (url.pathname === "/api/stats" && req.method === "GET") {
+        return handleGetStats(ctx);
       }
       
       // 404 for other routes
@@ -174,4 +189,188 @@ function jsonRpcError(id: unknown, code: string, message: string): Response {
     }),
     { status: 200, headers: { "Content-Type": "application/json" } }
   );
+}
+
+// ============================================
+// Bounties API Handlers
+// ============================================
+
+async function handleGetBounties(req: Request, ctx: CommandContext): Promise<Response> {
+  try {
+    const { searchParams } = new URL(req.url);
+    const status = searchParams.get("status") || undefined;
+    const hunterAddress = searchParams.get("hunterAddress") || undefined;
+    const creatorHashId = searchParams.get("creatorHashId") || undefined;
+
+    const prisma = getPrismaClient();
+
+    const where: any = {};
+    
+    if (status) {
+      where.status = status;
+    } else {
+      where.status = { in: ["OPEN", "ESCROWED"] };
+    }
+
+    if (hunterAddress) {
+      where.hunterAddress = hunterAddress;
+    }
+
+    if (creatorHashId) {
+      where.creatorHashId = creatorHashId;
+    }
+
+    const bounties = await prisma.bounty.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        rewardAmount: true,
+        currency: true,
+        status: true,
+        hunterAddress: true,
+        creatorHashId: true,
+        escrowAddress: true,
+        createdAt: true,
+        expiresAt: true,
+      },
+    });
+
+    const formattedBounties = bounties.map((b: any) => ({
+      id: b.id,
+      title: b.title,
+      description: b.description,
+      rewardAmount: b.rewardAmount,
+      currency: b.currency,
+      status: b.status,
+      hunterAddress: b.hunterAddress ?? undefined,
+      creatorHashId: b.creatorHashId,
+      escrowAddress: b.escrowAddress ?? undefined,
+      createdAt: b.createdAt.toISOString(),
+      expiresAt: b.expiresAt?.toISOString() ?? undefined,
+    }));
+
+    return new Response(
+      JSON.stringify({ success: true, data: formattedBounties }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  } catch (error) {
+    console.error("Error fetching bounties:", error);
+    const message = error instanceof Error ? error.message : "Failed to fetch bounties";
+    return new Response(
+      JSON.stringify({ success: false, error: message }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+}
+
+async function handleCreateBounty(req: Request, ctx: CommandContext): Promise<Response> {
+  try {
+    const body = await req.json() as Record<string, unknown>;
+    const title = String(body.title ?? "");
+    const description = String(body.description ?? "");
+    const rewardAmount = String(body.rewardAmount ?? 0);
+    const currency = String(body.currency ?? "cUSD");
+    const creatorHashId = String(body.creatorHashId ?? "");
+    const expiresAt = body.expiresAt ? new Date(String(body.expiresAt)) : undefined;
+
+    if (!title || !description || !rewardAmount || !creatorHashId) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Missing required fields: title, description, rewardAmount, creatorHashId",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    const prisma = getPrismaClient();
+
+    const bounty = await prisma.bounty.create({
+      data: {
+        title,
+        description,
+        rewardAmount,
+        currency,
+        creatorHashId,
+        status: "OPEN",
+        expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+      },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        rewardAmount: true,
+        currency: true,
+        status: true,
+        creatorHashId: true,
+        createdAt: true,
+      },
+    });
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        data: {
+          id: bounty.id,
+          title: bounty.title,
+          description: bounty.description,
+          rewardAmount: bounty.rewardAmount,
+          currency: bounty.currency,
+          status: bounty.status,
+          creatorHashId: bounty.creatorHashId,
+          createdAt: bounty.createdAt.toISOString(),
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  } catch (error) {
+    console.error("Error creating bounty:", error);
+    const message = error instanceof Error ? error.message : "Failed to create bounty";
+    return new Response(
+      JSON.stringify({ success: false, error: message }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+}
+
+async function handleGetStats(ctx: CommandContext): Promise<Response> {
+  try {
+    const prisma = getPrismaClient();
+    
+    // Use type assertion for Prisma queries to avoid type inference issues
+    const bountyCount = await (prisma.bounty.count as any)();
+    const openCount = await (prisma.bounty.count as any)({ where: { status: "OPEN" } });
+    const closedCount = await (prisma.bounty.count as any)({ where: { status: { in: ["RELEASED", "CANCELLED"] } } });
+    const totalReward = await (prisma.bounty.aggregate as any)({
+      _sum: { rewardAmount: true },
+      where: { status: { in: ["OPEN", "ESCROWED"] } },
+    });
+
+    // Handle Prisma aggregate result - use type assertion
+    const totalRewardData = totalReward as unknown as { _sum: { rewardAmount: string | null } | null };
+    const totalRewardVal = totalRewardData._sum?.rewardAmount ?? "0";
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        data: {
+          totalBounties: bountyCount,
+          openBounties: openCount,
+          closedBounties: closedCount,
+          totalReward: totalRewardVal,
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  } catch (error) {
+    console.error("Error fetching stats:", error);
+    const message = error instanceof Error ? error.message : "Failed to fetch stats";
+    return new Response(
+      JSON.stringify({ success: false, error: message }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
 }

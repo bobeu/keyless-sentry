@@ -6,6 +6,7 @@ export * from "./validation";
 export * from "./orchestrator";
 export * from "./signatureRequestService";
 export * from "./types/user";
+export * from "./personality";
 export * from "./registry/abi";
 export * from "./registry/registryClient";
 export * from "./registry/transactionWatcher";
@@ -19,6 +20,7 @@ export {
 export * from "./db/repository";
 export * from "./db/bountyRepository";
 export * from "./db/registrationRepository";
+export { getPrismaClient } from "./db/client";
 export * from "./reasoning/skillDiscoveryService";
 export * from "./skills/seal";
 export * from "./skills/invoice";

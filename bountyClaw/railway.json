@@ -1,0 +1,36 @@
+{
+  "$schema": "https://railway.app/schema.json",
+  "name": "bountyclaw-frontend",
+  "services": {
+    "web": {
+      "build": {
+        "context": ".",
+        "dockerfile": "Dockerfile"
+      },
+      "ports": {
+        "3000": {
+          "port": 3000,
+          "proxy": true
+        }
+      },
+      "environment": [
+        "NODE_ENV=production"
+      ],
+      "deploy": {
+        "memory": 512,
+        "numReplicas": 1
+      }
+    }
+  },
+  "plugins": {
+    "postgres": {
+      "plan": "starter"
+    }
+  },
+  "environmentVariables": {
+    "NEXT_PUBLIC_API_URL": {
+      "description": "API URL for frontend to connect to backend service",
+      "value": "https://bountyclaw-backend.railway.app"
+    }
+  }
+}
