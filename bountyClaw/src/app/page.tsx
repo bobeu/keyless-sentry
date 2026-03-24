@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 
 // Neo-Brutalist Components
 const BrutalistCard = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => (
-  <div className={`border-4 border-black bg-white shadow-[4px_4px_0px_000000] p-6 ${className}`}>
+  <div className={`border-4 border-black bg-white shadow-[4px_4px_0px_000000] p-4 md:p-6 ${className}`}>
     {children}
   </div>
 );
@@ -14,7 +14,7 @@ const BrutalistButton = ({ children, disabled, className, color = "bg-yellow-400
     type={type}
     onClick={onClick}
     disabled={disabled}
-    className={className || `border-4 border-black ${color} px-6 py-2 font-bold shadow-[4px_4px_0px_000000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all`}
+    className={className || `border-4 border-black ${color} px-4 md:px-6 py-2 font-bold shadow-[4px_4px_0px_000000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all`}
   >
     {children}
   </button>
@@ -26,7 +26,7 @@ const BrutalistInput = ({ placeholder, value, onChange, className = "" }: { plac
     placeholder={placeholder}
     value={value}
     onChange={onChange}
-    className={`w-full border-4 border-black p-4 mb-4 focus:bg-yellow-100 outline-none ${className}`}
+    className={`w-full border-4 border-black p-3 md:p-4 mb-3 md:mb-4 focus:bg-yellow-100 outline-none ${className}`}
   />
 );
 
@@ -35,7 +35,7 @@ const BrutalistTextarea = ({ placeholder, value, onChange, className = "" }: { p
     placeholder={placeholder}
     value={value}
     onChange={onChange}
-    className={`w-full border-4 border-black p-4 mb-4 focus:bg-yellow-100 outline-none resize-none ${className}`}
+    className={`w-full border-4 border-black p-3 md:p-4 mb-3 md:mb-4 focus:bg-yellow-100 outline-none resize-none ${className}`}
     rows={4}
   />
 );
@@ -172,35 +172,35 @@ export default function BountyPage() {
   };
 
   return (
-    <div className="min-h-screen max-w-7xl text-black p-8 font-['Comic_Sans_MS','Comic_Sans_MS',cursive]">
+    <div className="min-h-screen max-w-7xl text-black p-4 md:p-8 font-['Comic_Sans_MS','Comic_Sans_MS',criterion]">
       {/* Header */}
-      <header className="border-4 border-black bg-yellow-400 p-6 mb-8 shadow-[4px_4px_0px_000000]">
-        <h1 className="text-5xl font-black uppercase italic">BountyClaw: The Arbiter</h1>
-        <p className="text-xl font-bold mt-2">Autonomous Gig Economy Protocol</p>
+      <header className="border-4 border-black bg-yellow-400 p-4 md:p-6 mb-6 md:mb-8 shadow-[4px_4px_0px_000000]">
+        <h1 className="text-2xl md:text-4xl lg:text-5xl font-black uppercase italic">BountyClaw: The Arbiter</h1>
+        <p className="text-lg md:text-xl font-bold mt-2">Autonomous Gig Economy Protocol</p>
       </header>
       
-      <div className="grid grid-cols-12 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-8">
         {/* TVL Metrics */}
-         <BrutalistCard className="col-span-4 bg-white">
-           <h2 className="text-xl font-bold uppercase underline mb-4">Total Escrowed</h2>
-           <p className="text-4xl font-black text-[#39FF14] drop-shadow-[2px_2px_0_#000]">{stats.totalEscrowed} cUSD</p>
+         <BrutalistCard className="md:col-span-4 bg-white">
+           <h2 className="text-lg md:text-xl font-bold uppercase underline mb-2 md:mb-4">Total Escrowed</h2>
+           <p className="text-2xl md:text-4xl font-black text-[#39FF14] drop-shadow-[2px_2px_0_#000]">{stats.totalEscrowed} cUSD</p>
          </BrutalistCard>
          
          {/* Active Bounties Count */}
-         <BrutalistCard className="col-span-4 bg-white">
-           <h2 className="text-xl font-bold uppercase underline mb-4">Active Bounties</h2>
-           <p className="text-4xl font-black">{stats.activeBounties}</p>
+         <BrutalistCard className="md:col-span-4 bg-white">
+           <h2 className="text-lg md:text-xl font-bold uppercase underline mb-2 md:mb-4">Active Bounties</h2>
+           <p className="text-2xl md:text-4xl font-black">{stats.activeBounties}</p>
          </BrutalistCard>
          
          {/* Hunters */}
-         <BrutalistCard className="col-span-4 bg-white">
-           <h2 className="text-xl font-bold uppercase underline mb-4">Total Hunters</h2>
-           <p className="text-4xl font-black">{stats.totalHunters}</p>
+         <BrutalistCard className="md:col-span-4 bg-white">
+           <h2 className="text-lg md:text-xl font-bold uppercase underline mb-2 md:mb-4">Total Hunters</h2>
+           <p className="text-2xl md:text-4xl font-black">{stats.totalHunters}</p>
          </BrutalistCard>
        
         {/* Post Bounty */}
-        <BrutalistCard className="col-span-8 bg-white">
-          <h2 className="text-2xl font-black mb-4 uppercase">Post a New Task</h2>
+        <BrutalistCard className="md:col-span-8 bg-white">
+          <h2 className="text-xl md:text-2xl font-black mb-4 uppercase">Post a New Task</h2>
           <BrutalistInput 
             placeholder="Task Title..." 
             value={title}
@@ -225,50 +225,50 @@ export default function BountyPage() {
         </BrutalistCard>
         
         {/* Quick Stats */}
-        <BrutalistCard className="col-span-4 bg-white">
-          <h2 className="text-xl font-bold uppercase underline mb-4">Quick Actions</h2>
-          <div className="space-y-4">
-            <BrutalistButton color="bg-white" className="w-full" disabled={false}>
+        <BrutalistCard className="md:col-span-4 bg-white">
+          <h2 className="text-lg md:text-xl font-bold uppercase underline mb-2 md:mb-4">Quick Actions</h2>
+          <div className="space-y-2 md:space-y-4">
+            <BrutalistButton color="bg-white" className="w-full text-sm md:text-base" disabled={false}>
               View My Bounties
             </BrutalistButton>
-            <BrutalistButton color="bg-white" className="w-full" disabled={false}>
+            <BrutalistButton color="bg-white" className="w-full text-sm md:text-base" disabled={false}>
               My Submissions
             </BrutalistButton>
-            <BrutalistButton color="bg-white" className="w-full" disabled={false}>
+            <BrutalistButton color="bg-white" className="w-full text-sm md:text-base" disabled={false}>
               Escrow Balance
             </BrutalistButton>
           </div>
         </BrutalistCard>
         
         {/* Bounty Feed */}
-        <div className="col-span-12">
+        <div className="md:col-span-12">
           <BrutalistCard className="bg-white">
-            <h2 className="text-3xl font-black mb-6 border-b-4 border-black pb-2">Active Bounties</h2>
+            <h2 className="text-2xl md:text-3xl font-black mb-4 md:mb-6 border-b-4 border-black pb-2">Active Bounties</h2>
             <div className="space-y-4">
               {bounties.map((bounty) => (
                 <div 
                   key={bounty.id}
-                  className="flex justify-between items-center border-b-2 border-black py-4 hover:bg-yellow-50"
+                  className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4 border-b-2 border-black py-4 hover:bg-yellow-50"
                 >
-                  <div className="flex-1">
-                    <h3 className="text-lg font-bold">{bounty.title}</h3>
-                    <p className="text-sm text-gray-600">{bounty.description}</p>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-base md:text-lg font-bold truncate">{bounty.title}</h3>
+                    <p className="text-sm text-gray-600 line-clamp-2">{bounty.description}</p>
                     <p className="text-xs text-gray-400 mt-1">
                       Created: {new Date(bounty.createdAt).toLocaleDateString()}
                     </p>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-4">
                     <StatusBadge status={bounty.status} />
-                    <span className="text-xl font-black border-2 border-black bg-yellow-400 px-4 py-1">
+                    <span className="text-lg md:text-xl font-black border-2 border-black bg-yellow-400 px-3 md:px-4 py-1">
                       {bounty.rewardAmount} {bounty.currency}
                     </span>
                     {bounty.status === "ESCROWED" && <PayoutBadge />}
                     {bounty.status !== "OPEN" && bounty.status !== "ESCROWED" ? (
-                      <BrutalistButton color="bg-gray-200" className="text-sm" disabled={false}>
+                      <BrutalistButton color="bg-gray-200" className="text-xs md:text-sm" disabled={false}>
                         View
                       </BrutalistButton>
                     ) : (
-                      <BrutalistButton color="bg-white" className="text-sm" disabled={false}>
+                      <BrutalistButton color="bg-white" className="text-xs md:text-sm" disabled={false}>
                         Join
                       </BrutalistButton>
                     )}
@@ -281,9 +281,9 @@ export default function BountyPage() {
       </div>
       
       {/* Footer */}
-      <footer className="mt-12 border-4 border-black p-6 text-center">
-        <p className="font-bold">BountyClaw: The Autonomous Gig Economy Hub</p>
-        <p className="text-sm">Powered by Keyless Collective SDK • ERC-8004 Compatible</p>
+      <footer className="mt-8 md:mt-12 border-4 border-black p-4 md:p-6 text-center">
+        <p className="font-bold text-sm md:text-base">BountyClaw: The Autonomous Gig Economy Hub</p>
+        <p className="text-xs md:text-sm">Powered by Keyless Collective SDK • ERC-8004 Compatible</p>
       </footer>
     </div>
   );

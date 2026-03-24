@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "../../../generated/client";
+import "dotenv/config";
 
 export const dynamic = 'force-dynamic';
+
+function getPrismaClient(): PrismaClient {
+  const connectionString = `${process.env.DATABASE_URL}`;
+  const adapter = new PrismaPg({ connectionString });
+  return new PrismaClient({ adapter });
+}
 
 export async function GET(request: Request) {
   try {
@@ -9,17 +18,57 @@ export async function GET(request: Request) {
     const hunterAddress = searchParams.get("hunterAddress") || undefined;
     const creatorHashId = searchParams.get("creatorHashId") || undefined;
 
-    // Call gateway API
-    const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:8080';
-    const queryParams = new URLSearchParams();
-    if (status) queryParams.set('status', status);
-    if (hunterAddress) queryParams.set('hunterAddress', hunterAddress);
-    if (creatorHashId) queryParams.set('creatorHashId', creatorHashId);
+    const prisma = getPrismaClient();
 
-    const response = await fetch(`${gatewayUrl}/api/bounties?${queryParams.toString()}`);
-    const result = await response.json();
+    const where: any = {};
+    
+    if (status) {
+      where.status = status;
+    } else {
+      where.status = { in: ["OPEN", "ESCROWED"] };
+    }
 
-    return NextResponse.json(result);
+    if (hunterAddress) {
+      where.hunterAddress = hunterAddress;
+    }
+
+    if (creatorHashId) {
+      where.creatorHashId = creatorHashId;
+    }
+
+    const bounties = await prisma.bounty.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        rewardAmount: true,
+        currency: true,
+        status: true,
+        hunterAddress: true,
+        creatorHashId: true,
+        escrowAddress: true,
+        createdAt: true,
+        expiresAt: true,
+      },
+    });
+
+    const formattedBounties = bounties.map((b: any) => ({
+      id: b.id,
+      title: b.title,
+      description: b.description,
+      rewardAmount: b.rewardAmount,
+      currency: b.currency,
+      status: b.status,
+      hunterAddress: b.hunterAddress ?? undefined,
+      creatorHashId: b.creatorHashId,
+      escrowAddress: b.escrowAddress ?? undefined,
+      createdAt: b.createdAt.toISOString(),
+      expiresAt: b.expiresAt?.toISOString() ?? undefined,
+    }));
+
+    return NextResponse.json({ success: true, data: formattedBounties });
   } catch (error) {
     console.error("Error fetching bounties:", error);
     return NextResponse.json(
@@ -47,26 +96,43 @@ export async function POST(request: Request) {
       );
     }
 
-    // Call gateway API
-    const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:8080';
+    const prisma = getPrismaClient();
     
-    const response = await fetch(`${gatewayUrl}/api/bounties`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+    const bounty = await prisma.bounty.create({
+      data: {
         title,
         description,
         rewardAmount,
         currency,
         creatorHashId,
-        expiresAt,
-      }),
+        status: "OPEN",
+        expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+      },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        rewardAmount: true,
+        currency: true,
+        status: true,
+        creatorHashId: true,
+        createdAt: true,
+      },
     });
 
-    const result = await response.json();
-    return NextResponse.json(result);
+    return NextResponse.json({
+      success: true,
+      data: {
+        id: bounty.id,
+        title: bounty.title,
+        description: bounty.description,
+        rewardAmount: bounty.rewardAmount,
+        currency: bounty.currency,
+        status: bounty.status,
+        creatorHashId: bounty.creatorHashId,
+        createdAt: bounty.createdAt.toISOString(),
+      },
+    });
   } catch (error) {
     console.error("Error creating bounty:", error);
     return NextResponse.json(

@@ -19,9 +19,12 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
-    }
+      "@/*": ["./src/*"],
+      "@prisma/client": ["./node_modules/.prisma/client"],
+      "@prisma/adapter-pg": ["./node_modules/@prisma/adapter-pg"]
+    },
+    "typeRoots": ["./node_modules/@types", "./node_modules/.prisma/client"]
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "../core/generated/**/*"],
   "exclude": ["node_modules"]
 }

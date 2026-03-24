@@ -1,0 +1,203 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum BountyStatus {
+  OPEN
+  IN_PROGRESS
+  ESCROWED
+  PENDING_VERIFICATION
+  RELEASED
+  CANCELLED
+}
+
+enum RegistrationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  COMPLETED
+}
+
+enum AuditLogStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum WalletType {
+  USER // User's personal wallet
+  BOUNTY // Bounty-specific escrow wallet
+  AGENT // Agent wallet
+}
+
+// ==================== USER & WALLETS ====================
+
+model User {
+  hashedId      String   @id // keccak256 of platform:id
+  eoaAddress    String
+  walletAddress String? // Linked Keyless wallet
+  createdAt     DateTime @default(now())
+
+  bounties  Bounty[]
+  auditLogs AuditLog[]
+  wallets   Wallet[]
+
+  @@map("users")
+}
+
+model Wallet {
+  id         String     @id @default(uuid())
+  userId     String? // Link to User (null for bounty escrow wallets)
+  address    String     @unique // Keyless wallet address
+  walletType WalletType
+  bountyId   String? // If BOUNTY type, link to specific bounty
+  metadata   Json? // Additional wallet info from Keyless SDK
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  user     User?    @relation(fields: [userId], references: [hashedId], onDelete: SetNull)
+  bounties Bounty[] @relation("BountyEscrowWallet")
+
+  @@index([userId])
+  @@index([walletType])
+  @@index([bountyId])
+  @@map("wallets")
+}
+
+// ==================== AUTHORIZATION SIGNATURES ====================
+
+model Signature {
+  id            String    @id @default(uuid())
+  walletAddress String // The wallet this signature authorizes
+  authorization String // The signed authorization message
+  signedMessage String // The actual message that was signed
+  expiresAt     DateTime? // Optional expiration
+  createdAt     DateTime  @default(now())
+  isActive      Boolean   @default(true)
+
+  @@index([walletAddress])
+  @@index([isActive])
+  @@map("signatures")
+}
+
+// ==================== TRANSACTIONS ====================
+
+model Transaction {
+  id           String    @id @default(uuid())
+  bountyId     String? // Link to bounty (for bounty payouts)
+  fromAddress  String // Sender wallet address
+  toAddress    String // Recipient wallet address
+  amount       String // Amount in wei
+  currency     String    @default("cUSD") // or "CELO"
+  txHash       String? // Blockchain transaction hash
+  status       String    @default("PENDING") // PENDING, CONFIRMED, FAILED
+  type         String // "DEPOSIT", "PAYOUT", "REFUND"
+  errorMessage String? // Error message if failed
+  createdAt    DateTime  @default(now())
+  confirmedAt  DateTime?
+
+  @@index([bountyId])
+  @@index([fromAddress])
+  @@index([toAddress])
+  @@index([txHash])
+  @@map("transactions")
+}
+
+// ==================== BOUNTIES ====================
+
+model Bounty {
+  id            String       @id @default(uuid())
+  title         String
+  description   String
+  rewardAmount  String // in wei
+  currency      String       @default("cUSD")
+  hunterAddress String? // address that will receive the reward
+  status        BountyStatus @default(OPEN)
+  proofUrl      String? // URL submitted by hunter as proof of work
+  proofCriteria String? // criteria for proving completion
+  escrowAddress String? // Keyless escrow wallet address for this bounty
+  creatorHashId String // user who created the bounty
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  expiresAt     DateTime? // optional expiration
+
+  creator       User?          @relation(fields: [creatorHashId], references: [hashedId], onDelete: Cascade)
+  registrations Registration[]
+  escrowWallet  Wallet?        @relation("BountyEscrowWallet", fields: [escrowAddress], references: [address])
+
+  @@index([creatorHashId])
+  @@index([status])
+  @@index([hunterAddress])
+  @@index([escrowAddress])
+  @@map("bounties")
+}
+
+// ==================== REGISTRATIONS ====================
+
+model Registration {
+  id                 String             @id @default(uuid())
+  bountyId           String
+  hunterAddress      String
+  status             RegistrationStatus @default(PENDING)
+  proofUrl           String?
+  verificationResult Json?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  bounty Bounty @relation(fields: [bountyId], references: [id], onDelete: Cascade)
+
+  @@index([bountyId])
+  @@index([hunterAddress])
+  @@index([status])
+  @@map("registrations")
+}
+
+// ==================== AUDIT LOGS ====================
+
+model AuditLog {
+  id           String         @id @default(uuid())
+  userHashedId String
+  action       String
+  txHash       String?
+  nonce        String? // Transaction nonce for double-spend prevention
+  status       AuditLogStatus @default(PENDING)
+  gasUsed      String? // Gas used in hex or decimal
+  timestamp    DateTime       @default(now())
+  details      Json? // Additional metadata
+
+  user User? @relation(fields: [userHashedId], references: [hashedId], onDelete: Cascade)
+
+  @@index([userHashedId])
+  @@index([action])
+  @@index([timestamp])
+  @@index([nonce])
+  @@index([status])
+  @@map("audit_logs")
+}
+
+// ==================== AGENT IDENTITY ====================
+
+/**
+ * BountyClaw Identity - Stores the agent's identity
+ * This is a singleton record for the BountyClaw agent itself
+ */
+model BountyClawIdentity {
+  id              String   @id @default(uuid())
+  agentName       String
+  identityAddress String // Agent's Keyless wallet address
+  metadataUri     String // IPFS or data URI with agent capabilities
+  a2aEndpoint     String // Agent-to-Agent endpoint
+  chainId         Int // Chain where identity is registered
+  coordinatorUrl  String // Keyless Coordinator URL
+  txHash          String? // Registration transaction hash
+  registeredAt    DateTime @default(now())
+  lastVerifiedAt  DateTime @default(now())
+  isActive        Boolean  @default(true)
+
+  @@map("bountyclaw_identity")
+}

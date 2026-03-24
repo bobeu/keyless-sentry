@@ -1,0 +1,10 @@
+# Only ignore these directories - they are not needed for deployment
+scripts/
+types/
+
+# Ignore markdown files
+*.md
+
+# Docker files (use root Dockerfile)
+Dockerfile
+docker-compose.yml
