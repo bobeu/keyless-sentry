@@ -77,33 +77,66 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { title, description, rewardAmount, currency = "cUSD", creatorHashId, expiresAt } = body;
+    const { 
+      title, 
+      description, 
+      rewardAmount, 
+      currency = "cUSD", 
+      eoaAddress,      // User's EOA wallet address
+      walletAddress,   // Keyless wallet address (used as creatorHashId)
+      expiresAt 
+    } = body;
 
-    if (!title || !description || !rewardAmount || !creatorHashId) {
+    if (!title || !description || !rewardAmount || !walletAddress) {
       return NextResponse.json(
         {
           success: false,
-          error: "Missing required fields: title, description, rewardAmount, creatorHashId",
+          error: "Missing required fields: title, description, rewardAmount, walletAddress",
         },
         { status: 400 }
       );
     }
 
+    // Validate address format (must be valid Ethereum address)
+    if (!walletAddress.startsWith('0x') || walletAddress.length !== 42) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid wallet address format. Must be a valid Ethereum address (0x...)",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Use Keyless wallet address as the unique identifier (creatorHashId)
+    // This is what we'll use to index user's bounties
+    const creatorHashId = walletAddress.toLowerCase();
+
     const prisma = getPrismaClient();
     
     // Ensure the user exists before creating bounty
-    const existingUser = await prisma.user.findUnique({
+    // Check if user exists by wallet address
+    let user = await prisma.user.findUnique({
       where: { hashedId: creatorHashId },
     });
     
-    if (!existingUser) {
-      // Create a placeholder user for this bounty creator
-      await prisma.user.create({
+    if (!user) {
+      // Create new user with their Keyless wallet address
+      user = await prisma.user.create({
         data: {
           hashedId: creatorHashId,
-          eoaAddress: "", // Will be filled in by Keyless wallet
+          eoaAddress: eoaAddress || "", // Store EOA if provided
+          walletAddress: walletAddress, // Store Keyless wallet address
         },
       });
+    } else {
+      // Update existing user with EOA if not set
+      if (eoaAddress && !user.eoaAddress) {
+        await prisma.user.update({
+          where: { hashedId: creatorHashId },
+          data: { eoaAddress },
+        });
+      }
     }
     
     const bounty = await prisma.bounty.create({
