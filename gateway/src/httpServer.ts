@@ -10,6 +10,7 @@ import type { CommandContext } from "./command";
 import { buildCommandMap } from "./commands";
 import { getSelfclawService } from "./auth/selfclaw";
 import { getPrismaClient } from "../../core/src/db/client";
+import { handleAgentRpc } from "./services/agent_rpc";
 import "dotenv/config";
 
 export interface HttpServerConfig {
@@ -27,7 +28,7 @@ export function createHttpServer(
   // Create a simple HTTP server using Bun
   const server = Bun.serve({
     port,
-    fetch(req) {
+    async fetch(req) {
       const url = new URL(req.url);
       
       // Health check endpoint
@@ -48,20 +49,44 @@ export function createHttpServer(
       
       // JSON-RPC endpoint
       if (url.pathname === "/" && req.method === "POST") {
-        return handleJsonRpcRequest(req, ctx, commandMap);
+        return await handleJsonRpcRequest(req, ctx, commandMap);
       }
       
       // Bounties API endpoints
       if (url.pathname === "/api/bounties" && req.method === "GET") {
-        return handleGetBounties(req, ctx);
+        return await handleGetBounties(req, ctx);
       }
       if (url.pathname === "/api/bounties" && req.method === "POST") {
-        return handleCreateBounty(req, ctx);
+        return await handleCreateBounty(req, ctx);
       }
       
       // Stats API endpoint
       if (url.pathname === "/api/stats" && req.method === "GET") {
-        return handleGetStats(ctx);
+        return await handleGetStats(ctx);
+      }
+      
+      // Agent RPC endpoint for programmatic interaction
+      if (url.pathname === "/api/agent" && req.method === "POST") {
+        try {
+          const body = await req.json();
+          const result = await handleAgentRpc(body as any);
+          return new Response(JSON.stringify(result), {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          });
+        } catch (error) {
+          return new Response(JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            error: {
+              code: -32603,
+              message: error instanceof Error ? error.message : "Internal error"
+            }
+          }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
       }
       
       // 404 for other routes
