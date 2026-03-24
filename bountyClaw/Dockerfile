@@ -12,6 +12,7 @@ RUN bun install --frozen-lockfile
 # Copy source files, configs, and prisma
 COPY src ./src
 COPY prisma ./prisma
+COPY prisma.config.ts ./
 COPY next.config.mjs tailwind.config.ts postcss.config.mjs tsconfig.json ./
 
 # Generate Prisma client using the version from package.json
@@ -39,6 +40,7 @@ RUN bun install --frozen-lockfile --production
 
 # Copy prisma generated client and schema
 COPY prisma ./prisma
+COPY prisma.config.ts ./
 
 # Copy built Next.js app
 COPY --from=builder /app/.next ./.next
