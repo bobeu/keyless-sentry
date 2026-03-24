@@ -17,9 +17,6 @@ COPY next.config.mjs tailwind.config.ts postcss.config.mjs tsconfig.json ./
 # Generate Prisma client using the version from package.json
 RUN bunx prisma generate --schema=prisma/schema.prisma
 
-# Push Prisma schema to database
-RUN bunx prisma db push --schema=prisma/schema.prisma
-
 # Ensure public folder exists for Next.js build
 RUN mkdir -p public
 
@@ -54,5 +51,5 @@ COPY --from=builder /app/node_modules/.prisma ./.prisma
 # Expose port
 EXPOSE 3000
 
-# Start Next.js (use PORT from Railway environment)
-CMD bunx next start -p $PORT
+# Run db push at startup (when DATABASE_URL is available from Railway) then start Next.js
+CMD bunx prisma db push --schema=prisma/schema.prisma --skip-generate && bunx next start -p $PORT
