@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 
 // Neo-Brutalist Components
 const BrutalistCard = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => (
-  <div className={`border-4 border-black bg-white shadow-[4px_4px_0px_000000] p-4 md:p-6 ${className}`}>
+  <div className={`border-4 border-black bg-white shadow-[4px_4px_0px_000000] p-3 sm:p-4 md:p-6 ${className}`}>
     {children}
   </div>
 );
@@ -26,7 +26,7 @@ const BrutalistInput = ({ placeholder, value, onChange, className = "" }: { plac
     placeholder={placeholder}
     value={value}
     onChange={onChange}
-    className={`w-full border-4 border-black p-3 md:p-4 mb-3 md:mb-4 focus:bg-yellow-100 outline-none ${className}`}
+    className={`w-full border-4 border-black p-2 sm:p-3 md:p-4 mb-2 sm:mb-3 md:mb-4 focus:bg-yellow-100 outline-none ${className}`}
   />
 );
 
@@ -35,7 +35,7 @@ const BrutalistTextarea = ({ placeholder, value, onChange, className = "" }: { p
     placeholder={placeholder}
     value={value}
     onChange={onChange}
-    className={`w-full border-4 border-black p-3 md:p-4 mb-3 md:mb-4 focus:bg-yellow-100 outline-none resize-none ${className}`}
+    className={`w-full border-4 border-black p-2 sm:p-3 md:p-4 mb-2 sm:mb-3 md:mb-4 focus:bg-yellow-100 outline-none resize-none ${className}`}
     rows={4}
   />
 );
@@ -172,11 +172,11 @@ export default function BountyPage() {
   };
 
   return (
-    <div className="min-h-screen max-w-7xl text-black p-4 md:p-8 font-['Comic_Sans_MS','Comic_Sans_MS',criterion]">
+    <div className="text-black font-['Comic_Sans_MS','Comic_Sans_MS',criterion]">
       {/* Header */}
-      <header className="border-4 border-black bg-yellow-400 p-4 md:p-6 mb-6 md:mb-8 shadow-[4px_4px_0px_000000]">
-        <h1 className="text-2xl md:text-4xl lg:text-5xl font-black uppercase italic">BountyClaw: The Arbiter</h1>
-        <p className="text-lg md:text-xl font-bold mt-2">Autonomous Gig Economy Protocol</p>
+      <header className="border-4 border-black bg-yellow-400 p-3 sm:p-4 md:p-6 mb-4 sm:mb-6 md:mb-8 shadow-[4px_4px_0px_000000]">
+        <h1 className="text-xl sm:text-2xl md:text-4xl lg:text-5xl font-black uppercase italic">BountyClaw: The Arbiter</h1>
+        <p className="text-base sm:text-lg md:text-xl font-bold mt-1 sm:mt-2">Autonomous Gig Economy Protocol</p>
       </header>
       
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-8">
@@ -281,9 +281,9 @@ export default function BountyPage() {
       </div>
       
       {/* Footer */}
-      <footer className="mt-8 md:mt-12 border-4 border-black p-4 md:p-6 text-center">
-        <p className="font-bold text-sm md:text-base">BountyClaw: The Autonomous Gig Economy Hub</p>
-        <p className="text-xs md:text-sm">Powered by Keyless Collective SDK • ERC-8004 Compatible</p>
+      <footer className="mt-6 sm:mt-8 md:mt-12 border-4 border-black p-3 sm:p-4 md:p-6 text-center">
+        <p className="font-bold text-xs sm:text-sm md:text-base">BountyClaw: The Autonomous Gig Economy Hub</p>
+        <p className="text-xs">Powered by Keyless Collective SDK • ERC-8004 Compatible</p>
       </footer>
     </div>
   );

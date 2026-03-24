@@ -17,10 +17,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased flex flex-col items-center w-full bg-yellow-600">
-        <main className="w-full max-w-7xl">
+      <body className="antialiased bg-yellow-600">
+        <div className="min-h-screen w-full max-w-7xl px-2 sm:px-4 md:px-6 lg:px-8 py-2 md:py-4">
           {children}
-        </main>
+        </div>
       </body>
     </html>
   );
