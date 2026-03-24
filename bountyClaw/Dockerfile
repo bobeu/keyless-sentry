@@ -54,4 +54,4 @@ COPY --from=builder /app/node_modules/.prisma ./.prisma
 EXPOSE 3000
 
 # Run db push at startup (when DATABASE_URL is available from Railway) then start Next.js
-CMD bunx prisma db push --schema=prisma/schema.prisma --skip-generate && bunx next start -p $PORT
+CMD bunx prisma db push --schema=prisma/schema.prisma && bunx next start -p $PORT
