@@ -17,6 +17,9 @@ COPY next.config.mjs tailwind.config.ts postcss.config.mjs tsconfig.json ./
 # Generate Prisma client using the version from package.json
 RUN bunx prisma generate --schema=prisma/schema.prisma
 
+# Push Prisma schema to database
+RUN bunx prisma db push --schema=prisma/schema.prisma
+
 # Ensure public folder exists for Next.js build
 RUN mkdir -p public
 
