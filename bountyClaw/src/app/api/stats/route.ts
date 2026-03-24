@@ -12,14 +12,11 @@ export async function GET() {
     const bountyCount = await (prisma.bounty.count as any)();
     const openCount = await (prisma.bounty.count as any)({ where: { status: "OPEN" } });
     const escrowedCount = await (prisma.bounty.count as any)({ where: { status: "ESCROWED" } });
-    const totalReward = await (prisma.bounty.aggregate as any)({
-      _sum: { rewardAmount: true },
-      where: { status: { in: ["OPEN", "ESCROWED"] } },
-    });
-
-    // Handle Prisma aggregate result
-    const totalRewardData = totalReward as unknown as { _sum: { rewardAmount: string | null } | null };
-    const totalRewardVal = totalRewardData._sum?.rewardAmount ?? "0";
+    // Use groupBy to get sum of rewards for OPEN and ESCROWED bounties
+    const totalReward = await prisma.$queryRaw<[{ total: string | null }]>`
+      SELECT SUM("rewardAmount") as total FROM "bounties" WHERE status IN ('OPEN', 'ESCROWED')
+    `;
+    const totalRewardVal = totalReward[0]?.total ?? "0";
 
     // Format for display (convert wei to readable format)
     const formattedTotal = (parseInt(totalRewardVal) / 1e18).toFixed(2);
