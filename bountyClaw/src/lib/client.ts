@@ -1,7 +1,7 @@
 import { AppError } from "./errors";
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "../../generated/client";
+import { PrismaClient } from "@prisma/client";
 
 /**
  * Get the Prisma client instance.

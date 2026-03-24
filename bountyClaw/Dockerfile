@@ -15,7 +15,7 @@ COPY prisma ./prisma
 COPY next.config.mjs tailwind.config.ts postcss.config.mjs tsconfig.json ./
 
 # Install Prisma and generate client
-RUN bun add -d prisma @prisma/adapter-pg && bunx prisma generate
+RUN bun add -d prisma @prisma/adapter-pg && bunx prisma generate --schema=prisma/schema.prisma
 
 # Ensure public folder exists for Next.js build
 RUN mkdir -p public
@@ -44,6 +44,9 @@ COPY prisma ./prisma
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./
+
+# Copy Prisma generated client
+COPY --from=builder /app/node_modules/.prisma ./.prisma
 
 # Expose port
 EXPOSE 3000

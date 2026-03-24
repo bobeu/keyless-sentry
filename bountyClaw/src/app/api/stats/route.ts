@@ -1,15 +1,8 @@
 import { NextResponse } from "next/server";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "../../../generated/client";
+import { getPrismaClient } from "@/lib/client";
 import "dotenv/config";
 
 export const dynamic = 'force-dynamic';
-
-function getPrismaClient(): PrismaClient {
-  const connectionString = `${process.env.DATABASE_URL}`;
-  const adapter = new PrismaPg({ connectionString });
-  return new PrismaClient({ adapter });
-}
 
 export async function GET() {
   try {
