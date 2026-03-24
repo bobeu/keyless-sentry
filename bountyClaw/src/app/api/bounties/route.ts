@@ -91,6 +91,21 @@ export async function POST(request: Request) {
 
     const prisma = getPrismaClient();
     
+    // Ensure the user exists before creating bounty
+    const existingUser = await prisma.user.findUnique({
+      where: { hashedId: creatorHashId },
+    });
+    
+    if (!existingUser) {
+      // Create a placeholder user for this bounty creator
+      await prisma.user.create({
+        data: {
+          hashedId: creatorHashId,
+          eoaAddress: "", // Will be filled in by Keyless wallet
+        },
+      });
+    }
+    
     const bounty = await prisma.bounty.create({
       data: {
         title,

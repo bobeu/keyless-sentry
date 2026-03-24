@@ -12,9 +12,9 @@ export async function GET() {
     const bountyCount = await (prisma.bounty.count as any)();
     const openCount = await (prisma.bounty.count as any)({ where: { status: "OPEN" } });
     const escrowedCount = await (prisma.bounty.count as any)({ where: { status: "ESCROWED" } });
-    // Use groupBy to get sum of rewards for OPEN and ESCROWED bounties
+    // Use raw SQL with proper type casting for sum of rewards
     const totalReward = await prisma.$queryRaw<[{ total: string | null }]>`
-      SELECT SUM("rewardAmount") as total FROM "bounties" WHERE status IN ('OPEN', 'ESCROWED')
+      SELECT SUM(CAST("rewardAmount" AS numeric)) as total FROM "bounties" WHERE status IN ('OPEN', 'ESCROWED')
     `;
     const totalRewardVal = totalReward[0]?.total ?? "0";
 
