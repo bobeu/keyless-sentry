@@ -200,4 +200,3 @@ model BountyClawIdentity {
 
   @@map("bountyclaw_identity")
 }
-his 
