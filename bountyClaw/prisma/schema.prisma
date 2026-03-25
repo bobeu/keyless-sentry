@@ -191,7 +191,7 @@ model Bounty {
   creator               User           @relation(fields: [creatorHashId], references: [hashedId], onDelete: Cascade)
   agent                 Agent?         @relation("BountyAgent", fields: [agentHashId], references: [walletAddress])
   previousAgent          Agent?         @relation("BountyPreviousAgent", fields: [previousAgentHashId], references: [walletAddress])
-  escrowWallet           Wallet?        @relation("BountyEscrowWallet", fields: [escrowAddress], references: [address"])
+  escrowWallet           Wallet?        @relation("BountyEscrowWallet", fields: [escrowAddress], references: [address])
   registrations         Registration[]
   negotiations          Negotiation[]
 
@@ -203,7 +203,7 @@ model Bounty {
   @@map("bounties")
 }
 
-// ==================== REGISTRATIONS ====================
+// =================== REGISTRATIONS ====================
 
 model Registration {
   id                  String             @id @default(uuid())
