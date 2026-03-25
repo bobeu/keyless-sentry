@@ -7,12 +7,13 @@ datasource db {
 }
 
 enum BountyStatus {
-  OPEN
-  IN_PROGRESS
-  ESCROWED
-  PENDING_VERIFICATION
-  RELEASED
-  CANCELLED
+  OPEN           // Available for agents to take
+  IN_PROGRESS    // Agent is working on it
+  ESCROWED       // Funds locked in escrow
+  PENDING_VERIFICATION // Agent submitted work, waiting for verification
+  RELEASED       // Payment released to agent
+  CANCELLED      // Cancelled by creator (only when OPEN)
+  EXPIRED        // Deadline missed, reopened for other agents
 }
 
 enum RegistrationStatus {
@@ -34,17 +35,37 @@ enum WalletType {
   AGENT     // Agent wallet
 }
 
+enum AgentVerificationStatus {
+  PENDING    // Verification in progress
+  VERIFIED    // Agent is verified
+  REJECTED   // Verification rejected
+  SUSPENDED  // Temporarily suspended
+}
+
+enum NegotiationStatus {
+  PENDING     // Waiting for creator response
+  ACCEPTED    // Creator accepted the offer
+  REJECTED    // Creator rejected the offer
+  EXPIRED     // Negotiation expired (deadline passed)
+  WITHDRAWN   // Agent withdrew their offer
+}
+
 // ==================== USER & WALLETS ====================
 
 model User {
-  hashedId      String     @id // keccak256 of platform:id
-  eoaAddress    String
+  hashedId      String     @id // keccak256 of platform:id (wallet address)
+  eoaAddress    String     @default("")
   walletAddress String?    // Linked Keyless wallet
   createdAt     DateTime   @default(now())
 
   bounties      Bounty[]
   auditLogs     AuditLog[]
   wallets       Wallet[]
+
+  // Agent-specific fields
+  isAgent       Boolean    @default(false)
+  reputation    Int        @default(0)
+  agent         Agent?
 
   @@map("users")
 }
@@ -66,6 +87,32 @@ model Wallet {
   @@index([walletType])
   @@index([bountyId])
   @@map("wallets")
+}
+
+// ==================== AGENTS ====================
+
+model Agent {
+  id                    String                  @id @default(uuid())
+  walletAddress         String                  @unique // Keyless wallet address
+  verificationStatus   AgentVerificationStatus  @default(PENDING)
+  reputation            Int                     @default(0)
+  capabilities          Json?                   // Agent's capabilities/skills
+  metadata              Json?                    // Additional agent info
+  registeredAt          DateTime                @default(now())
+  lastVerifiedAt        DateTime?
+  isActive              Boolean                 @default(true)
+
+  // Reference to User
+  userHashId            String                  @unique
+
+  user                  User                    @relation(fields: [userHashId], references: [hashedId], onDelete: Cascade)
+  
+  // Relations
+  negotiations          Negotiation[]
+  
+  @@index([verificationStatus])
+  @@index([reputation])
+  @@map("agents")
 }
 
 // ==================== AUTHORIZATION SIGNATURES ====================
@@ -110,29 +157,49 @@ model Transaction {
 // ==================== BOUNTIES ====================
 
 model Bounty {
-  id            String       @id @default(uuid())
-  title         String
-  description   String
-  rewardAmount  String       // in wei
-  currency      String       @default("cUSD")
-  hunterAddress String?      // address that will receive the reward
-  status        BountyStatus @default(OPEN)
-  proofUrl      String?      // URL submitted by hunter as proof of work
-  proofCriteria String?      // criteria for proving completion
-  escrowAddress String?       // Keyless escrow wallet address for this bounty
-  creatorHashId String       // user who created the bounty
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  expiresAt     DateTime?    // optional expiration
+  id                    String         @id @default(uuid())
+  title                 String
+  description           String
+  rewardAmount          String         // Displayed/minimum reward in wei
+  maxRewardAmount       String?        // Maximum reward (if range set)
+  currency              String         @default("cUSD")
+  
+  // Agent assignment
+  agentHashId           String?        // Agent currently working on bounty
+  previousAgentHashId   String?        // Agent that defaulted (barred from taking again)
+  
+  status                BountyStatus   @default(OPEN)
+  proofUrl              String?        // URL submitted by agent as proof of work
+  proofCriteria         String?       // criteria for proving completion
+  
+  // Capabilities and requirements
+  requiredCapabilities  Json?          // Required agent capabilities
+  minReputationThreshold Int?          // Minimum reputation required
+  
+  // Deadline
+  completionDeadline    DateTime?      // When work must be completed
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  expiresAt             DateTime?      // Original expiration (for display)
+  
+  // Escrow
+  escrowAddress         String?        // Keyless escrow wallet address for this bounty
+  
+  // Creator (User who posted bounty)
+  creatorHashId         String
 
-  creator       User?        @relation(fields: [creatorHashId], references: [hashedId], onDelete: Cascade)
-  registrations Registration[]
-  escrowWallet  Wallet?      @relation("BountyEscrowWallet", fields: [escrowAddress], references: [address])
+  creator               User           @relation(fields: [creatorHashId], references: [hashedId], onDelete: Cascade)
+  agent                 Agent?         @relation("BountyAgent", fields: [agentHashId], references: [walletAddress])
+  previousAgent          Agent?         @relation("BountyPreviousAgent", fields: [previousAgentHashId], references: [walletAddress])
+  escrowWallet           Wallet?        @relation("BountyEscrowWallet", fields: [escrowAddress], references: [address"])
+  registrations         Registration[]
+  negotiations          Negotiation[]
 
   @@index([creatorHashId])
   @@index([status])
-  @@index([hunterAddress])
-  @@index([escrowAddress])
+  @@index([agentHashId])
+  @@index([previousAgentHashId])
+  @@index([completionDeadline])
   @@map("bounties")
 }
 
@@ -154,6 +221,27 @@ model Registration {
   @@index([hunterAddress])
   @@index([status])
   @@map("registrations")
+}
+
+// ==================== NEGOTIATIONS ====================
+
+model Negotiation {
+  id              String            @id @default(uuid())
+  bountyId        String
+  agentWallet     String            // Agent's Keyless wallet address
+  proposedAmount  String            // Agent's proposed amount in wei
+  message         String?           // Agent's message to creator
+  status          NegotiationStatus @default(PENDING)
+  createdAt       DateTime          @default(now())
+  respondedAt     DateTime?
+  
+  bounty          Bounty            @relation(fields: [bountyId], references: [id], onDelete: Cascade)
+  agent           Agent             @relation(fields: [agentWallet], references: [walletAddress])
+
+  @@index([bountyId])
+  @@index([agentWallet])
+  @@index([status])
+  @@map("negotiations")
 }
 
 // ==================== AUDIT LOGS ====================
