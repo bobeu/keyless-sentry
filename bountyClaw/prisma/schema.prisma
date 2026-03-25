@@ -109,6 +109,8 @@ model Agent {
   
   // Relations
   negotiations          Negotiation[]
+  bounties              Bounty[]                @relation("BountyAgent")
+  previousBounties      Bounty[]                @relation("BountyPreviousAgent")
   
   @@index([verificationStatus])
   @@index([reputation])
