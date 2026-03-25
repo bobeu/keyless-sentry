@@ -203,7 +203,7 @@ model Bounty {
   @@map("bounties")
 }
 
-// =================== REGISTRATIONS ====================
+// ==================== REGISTRATIONS ====================
 
 model Registration {
   id                  String             @id @default(uuid())
